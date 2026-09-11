@@ -10,10 +10,12 @@ data/processed/
 *.avi
 *.mov
 
-# Model weights / runs
+# Model weights / runs (root models/ only — src/nfl_coverage/models is source code)
+/models/
 *.pt
 *.pth
 *.onnx
+*.joblib
 runs/
 checkpoints/
 wandb/
