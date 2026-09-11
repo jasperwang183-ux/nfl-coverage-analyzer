@@ -76,7 +76,7 @@ nfl-coverage-analyzer/
 - [ ] **4. Pre-snap vs. post-snap heads** — one model on pre-snap frames only ("what are they showing"), one on post-snap frames ("what did they run")
 - [ ] **5. Disguise detection** — flag plays where the pre-snap prediction differs from post-snap truth with high confidence; quantify disguise rates by team/down/distance
 - [ ] **6. Vision pipeline** — YOLO fine-tuned for player detection, jersey/team classification, field homography via line detection, multi-object tracking (e.g., ByteTrack/DeepSORT)
-- [ ] **7. Still-image mode** — ✅ thin slice: screenshot → YOLO foot points → homography (`scripts/calibrate_still.py`, click-based) → canonical frame → persisted snap-feature model (54.8% holdout / 33.5% majority) via `scripts/analyze_still.py`; next: automatic field-line calibration, LOS/offense-side inference
+- [ ] **7. Still-image mode** — ✅ thin slice: screenshot → YOLO foot points → homography (`scripts/calibrate_still.py`, click-based) → canonical frame → persisted snap-feature model (54.8% holdout / 33.5% majority) via `scripts/analyze_still.py`; ✅ QA loop: analyst accepts/corrects each call, reviews logged with features to `data/processed/still_reviews.jsonl` as future training data; next: automatic field-line calibration, LOS/offense-side inference
 - [ ] **8. Clip mode & overlay** — few-second clips → full shown-vs-run + disguise, annotated back onto the video
 - [ ] **9. Live feed overlay** — real-time(ish) per-play coverage overlay on a live video source (GPU + elevated camera angle required)
 
