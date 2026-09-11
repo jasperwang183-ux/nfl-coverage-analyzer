@@ -2,6 +2,15 @@
 
 Computer vision + ML system: detect what coverage an NFL defense shows pre-snap vs. what it runs post-snap, including disguised coverages. See README.md for full architecture and roadmap.
 
+## Product ladder (each rung builds on the last — don't skip)
+
+1. **Tracking-data analyzer (v0.1, done)** — coverage + disguise from Big Data Bowl tracking data.
+2. **Still images** — ingest pre-snap (+ optional post-snap) screenshots → "shown" coverage read from alignment. Stills cannot carry movement, so the "run" call stays weak here by design.
+3. **Clips** — ingest a few seconds of video → detect, track, homography → full shown-vs-run + disguise, rendered back as an annotated overlay on the clip.
+4. **Live feed overlay (end goal)** — same pipeline on a live video source with per-play overlay (~seconds of latency is acceptable). Requires a GPU and an elevated/all-22-style camera angle; broadcast angles crop the deep safeties.
+
+Every vision stage must output the same canonical frame schema the tracking models consume (`src/nfl_coverage/data/standardize.py`) — that is what makes rungs 2-4 reuse the same trained models.
+
 ## Ground rules
 
 - **Python 3.11+, Windows.** Use the project venv at `.venv\` for everything (`.venv\Scripts\python`, `.venv\Scripts\pip`). Never install packages globally.
