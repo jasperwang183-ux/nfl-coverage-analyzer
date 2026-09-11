@@ -1,0 +1,41 @@
+# Data — Kaggle competition data must not be redistributed
+data/raw/
+data/processed/
+*.csv
+*.parquet
+*.zip
+
+# Media
+*.mp4
+*.avi
+*.mov
+
+# Model weights / runs
+*.pt
+*.pth
+*.onnx
+runs/
+checkpoints/
+wandb/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.ipynb_checkpoints/
+
+# Kaggle credentials — never commit
+kaggle.json
+
+# Personal Claude Code overrides — never commit
+CLAUDE.local.md
+.claude/settings.local.json
+*.local.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
