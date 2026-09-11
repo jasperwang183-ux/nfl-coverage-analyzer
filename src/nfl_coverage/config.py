@@ -9,6 +9,8 @@ DATA_PROCESSED = ROOT / "data" / "processed"
 BDB2021 = DATA_RAW / "bdb2021"  # 2018 season, all pass plays, pre-snap frames; labels via nflverse
 BDB2026 = DATA_RAW / "bdb2026" / "114239_nfl_competition_files_published_analytics_final"
 
+MODELS_DIR = ROOT / "models"  # trained model bundles (gitignored — derived from competition data)
+
 # Field dimensions in yards (x includes both end zones)
 FIELD_LENGTH = 120.0
 FIELD_WIDTH = 53.3
