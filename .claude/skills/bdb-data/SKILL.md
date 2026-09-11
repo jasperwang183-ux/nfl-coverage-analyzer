@@ -1,18 +1,32 @@
 ---
 name: bdb-data
-description: Schema and gotchas for the NFL Big Data Bowl 2026 tracking dataset under data/raw/bdb2026/. Use whenever reading, joining, or engineering features from the input/output tracking CSVs or supplementary_data.csv.
+description: Schema and gotchas for the NFL Big Data Bowl tracking datasets (2021 and 2026) under data/raw/. Use whenever reading, joining, or engineering features from tracking CSVs, supplementary_data.csv, or nflverse coverage labels.
 ---
 
 # Big Data Bowl Data Reference
 
-**Primary dataset: BDB 2026 analytics** (2023 season), extracted under
-`data/raw/bdb2026/114239_nfl_competition_files_published_analytics_final/`.
+Two tracking datasets feed the project, loaded into one canonical schema by
+`src/nfl_coverage/data/loaders.py` (see `standardize.CANONICAL_COLUMNS`):
 
-> Historical note: the BDB **2025** dataset (which had `pff_passCoverage` and pre/post-snap frame
-> types) was **removed from Kaggle at the host's request** — its zip contains only a README saying
-> so. Do not plan around it. The 2026 data below carries its own coverage labels.
+- **BDB 2021** (2018 season) under `data/raw/bdb2021/` — every pass play, weeks 1–17,
+  **with 1s of pre-snap frames**; coverage labels joined from nflverse.
+- **BDB 2026 analytics** (2023 season) under
+  `data/raw/bdb2026/114239_nfl_competition_files_published_analytics_final/` — snap-to-throw
+  frames with built-in labels.
 
-## Files
+## BDB 2021 (2018) essentials
+
+- Files: `week[1-17].csv` + `plays.csv`, `games.csv`, `players.csv`. **camelCase** keys
+  (`gameId`, `playId`, `nflId`, `frameId`).
+- `event` column: `ball_snap` (frame 11 on virtually every play → frames 1–10 are the
+  pre-snap second), `line_set`, `man_in_motion`, `shift`, `pass_forward`, `tackle`, ...
+- `team` is home/away (not a club code) — resolve Offense/Defense via games.csv +
+  plays.csv `possessionTeam`. Ball rows have `team == "football"`, NaN nflId — drop.
+- No linemen; 11–17 players/play; receivers carry a `route` string.
+- Labels: `nfl_coverage.data.nflverse.attach_labels(plays, season=2018)` — 89.8% hit-rate,
+  ~17.3K labeled plays. See docs/DATA_NOTES.md for distributions.
+
+## BDB 2026 files
 
 | File | Grain | Size |
 |---|---|---|

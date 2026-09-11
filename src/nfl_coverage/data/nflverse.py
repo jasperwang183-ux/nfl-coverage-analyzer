@@ -1,10 +1,10 @@
 """Coverage labels from nflverse participation data.
 
-The Big Data Bowl 2024 dataset (2022 season, weeks 1-9) ships full pre- and post-snap
-tracking but no coverage labels. nflverse's play-by-play participation data carries
-per-play `defense_coverage_type` and `defense_man_zone_type` for the same seasons and
-shares the NFL's GSIS identifiers, so the two join on (old_game_id, play_id) — which
-are exactly BDB's (gameId, playId).
+The Big Data Bowl 2021 dataset (2018 season) ships pre- and post-snap tracking for
+every pass play but no coverage labels. nflverse's play-by-play participation data
+carries per-play `defense_coverage_type` and `defense_man_zone_type` for the same
+seasons and shares the NFL's GSIS identifiers, so the two join on
+(old_game_id, play_id) — which are exactly BDB's (gameId, playId).
 
 Source: https://github.com/nflverse/nflverse-data/releases (pbp_participation asset,
 public, no auth).

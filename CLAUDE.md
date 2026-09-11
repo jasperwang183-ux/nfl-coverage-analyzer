@@ -21,7 +21,7 @@ Every vision stage must output the same canonical frame schema the tracking mode
 
 ## Architecture map
 
-- `src/nfl_coverage/data/` — load/standardize Big Data Bowl 2026 CSVs (labels: `team_coverage_type`, `team_coverage_man_zone` in supplementary_data.csv; the 2025 dataset was removed from Kaggle — see data/README.md)
+- `src/nfl_coverage/data/` — load/standardize Big Data Bowl 2021 (2018 season, pre+post-snap, labels joined from nflverse) and 2026 (2023 season, labels in supplementary_data.csv) into one canonical schema
 - `src/nfl_coverage/features/` — pre-snap alignment + post-snap movement features
 - `src/nfl_coverage/models/` — baseline sklearn → PyTorch sequence models
 - `src/nfl_coverage/vision/` — Phase 2 only: YOLO detection, OpenCV homography, tracking

@@ -13,12 +13,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# NOTE: nfl-big-data-bowl-2025 is intentionally absent — its dataset was removed
-# from Kaggle at the host's request (the download yields only a README saying so).
-# bdb2024 is absent because its tracking only covers frames around tackles (no
-# snap-to-throw window), making it unusable for coverage analysis.
 # bdb2021 (2018 season, all pass plays, pre-snap frames) gets coverage labels from
-# nflverse participation data (src/nfl_coverage/data/nflverse.py).
+# nflverse participation data (src/nfl_coverage/data/nflverse.py); bdb2026 ships its own.
 COMPETITIONS = {
     "nfl-big-data-bowl-2026-analytics": ROOT / "data" / "raw" / "bdb2026",
     "nfl-big-data-bowl-2021": ROOT / "data" / "raw" / "bdb2021",

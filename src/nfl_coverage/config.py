@@ -16,15 +16,16 @@ FIELD_WIDTH = 53.3
 # Tracking data sample rate
 FRAMES_PER_SECOND = 10
 
-# Coverage label sets (from PFF labels in BDB 2025 plays.csv)
+# Canonical coverage labels (BDB 2026 enums; nflverse values map onto these via
+# data/nflverse.py COVERAGE_MAP)
 COVERAGE_CLASSES = [
-    "Cover-0",
-    "Cover-1",
-    "Cover-2",
-    "Cover-3",
-    "Cover-4",
-    "Cover-6",
-    "2-Man",
-    "Prevent",
+    "COVER_0_MAN",
+    "COVER_1_MAN",
+    "COVER_2_MAN",
+    "COVER_2_ZONE",
+    "COVER_3_ZONE",
+    "COVER_4_ZONE",
+    "COVER_6_ZONE",
+    "PREVENT",
 ]
-MAN_ZONE_CLASSES = ["Man", "Zone"]
+MAN_ZONE_CLASSES = ["MAN_COVERAGE", "ZONE_COVERAGE"]

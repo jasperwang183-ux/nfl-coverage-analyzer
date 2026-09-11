@@ -41,11 +41,8 @@ Values are clean enums (no messy free text). Class imbalance is real: weight los
 
 ## BDB 2021 + nflverse labels (verified 2026-09-10) — the pre-snap dataset
 
-**BDB 2024 turned out unusable** (its tracking only covers frame windows around tackles —
-completions start 5 frames before the *catch*), so the pre-snap dataset is **BDB 2021**
-(2018 season, all pass plays, weeks 1–17, extracted to `data/raw/bdb2021/`, 2.17 GB).
-
-Verified on week 1 + plays.csv:
+**BDB 2021** (2018 season, all pass plays, weeks 1–17, extracted to `data/raw/bdb2021/`,
+2.17 GB) is the dataset with pre-snap frames. Verified on week 1 + plays.csv:
 
 - **Pre-snap depth: exactly 1.0 s** — `ball_snap` is at frameId 11 on every play
   (min = max = 11 except one stray). Frames 1–10 are pre-snap; `line_set`,

@@ -28,7 +28,7 @@ A computer vision + machine learning system that analyzes NFL footage and tracki
 
 ### Key design insight
 
-The Big Data Bowl datasets are **not video** — they are Next Gen Stats player-tracking data: (x, y) coordinates for all 22 players at 10 Hz, with play-level labels (including PFF coverage labels such as `pff_passCoverage` and `pff_manZone` in the 2025 data). That's a feature, not a bug:
+The Big Data Bowl datasets are **not video** — they are Next Gen Stats player-tracking data: (x, y) coordinates for every skill player at 10 Hz. Coverage labels come with the 2026 data (`team_coverage_type`, `team_coverage_man_zone`) and, for the 2018 season, from nflverse participation data joined by play ID. That's a feature, not a bug:
 
 1. **Phase 1 — Coverage model on tracking data.** Train and validate the coverage classifier on clean, labeled tracking data first. This is where all the football logic lives (shells, rotations, man/zone cues, disguise).
 2. **Phase 2 — Vision pipeline.** Build the YOLO + OpenCV pipeline that converts broadcast/All-22 footage into the *same* field-space (x, y) representation: player detection → tracking → field homography (mapping pixel coordinates to yard-line coordinates).
@@ -47,8 +47,8 @@ This ordering means the hard ML problem (coverage recognition) is solved on grou
 
 | Dataset | What it provides |
 |---|---|
-| [NFL Big Data Bowl 2026](https://www.kaggle.com/competitions/nfl-big-data-bowl-2026-analytics/data) | 2023-season tracking data (10 Hz, all 22 players up to the pass) + coverage labels (`team_coverage_type`, `team_coverage_man_zone`) — the core training set |
-| ~~NFL Big Data Bowl 2025~~ | **No longer available** — removed from Kaggle at the host's request; its PFF coverage labels are replaced by the 2026 labels above |
+| [NFL Big Data Bowl 2021](https://www.kaggle.com/competitions/nfl-big-data-bowl-2021/data) | 2018-season tracking for every pass play, weeks 1–17, **including 1s of pre-snap frames** — coverage labels joined from [nflverse participation data](https://github.com/nflverse/nflverse-data) (~17K labeled plays) |
+| [NFL Big Data Bowl 2026](https://www.kaggle.com/competitions/nfl-big-data-bowl-2026-analytics/data) | 2023-season tracking (snap to pass release) + built-in coverage labels (`team_coverage_type`, `team_coverage_man_zone`) (~14K labeled plays) |
 
 See [data/README.md](data/README.md) for download instructions (Kaggle API — no MCP needed).
 
@@ -69,10 +69,10 @@ nfl-coverage-analyzer/
 
 ## Roadmap
 
-- [ ] **0. Setup** — download BDB 2025/2026 data, explore schema in a notebook
-- [ ] **1. Data pipeline** — parse tracking CSVs, standardize field coordinates (flip plays to one direction), split frames into pre-snap / post-snap windows
-- [ ] **2. Feature engineering** — safety depth/width, CB leverage & cushion, defender-to-receiver assignment distances, post-snap rotation vectors, man-indicator (defender mirrors motion) vs. zone-indicator (defender stays spatial)
-- [ ] **3. Coverage classifier** — baseline (logistic regression / XGBoost on engineered features), then PyTorch sequence model on raw per-frame player states; report per-class accuracy vs. PFF labels
+- [x] **0. Setup** — download BDB 2021/2026 data, verify schemas and label joins (see docs/DATA_NOTES.md)
+- [x] **1. Data pipeline** — parse tracking CSVs, standardize field coordinates, snap-align frames (`rel_frame`), cache to parquet
+- [x] **2. Feature engineering** — snap alignment (shell, depth, press), post-snap movement (zone drops, man-mirroring), pre-snap motion (2018 data)
+- [ ] **3. Coverage classifier** — ✅ baseline (gradient boosting: RUN 58.1% / SHOWN 54.3% on 8 classes vs. 33.5% majority); next: PyTorch sequence model on raw per-frame player states
 - [ ] **4. Pre-snap vs. post-snap heads** — one model on pre-snap frames only ("what are they showing"), one on post-snap frames ("what did they run")
 - [ ] **5. Disguise detection** — flag plays where the pre-snap prediction differs from post-snap truth with high confidence; quantify disguise rates by team/down/distance
 - [ ] **6. Vision pipeline** — YOLO fine-tuned for player detection, jersey/team classification, field homography via line detection, multi-object tracking (e.g., ByteTrack/DeepSORT)
