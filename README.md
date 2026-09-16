@@ -9,22 +9,32 @@ A computer vision + machine learning system that analyzes NFL footage and tracki
   Game film ──►  │ YOLO player detection ──► OpenCV homography  │ ──► field-space (x, y) tracks
                  └─────────────────────────────────────────────┘
                                        │
-  NGS tracking data (Big Data Bowl) ───┤   (same representation)
+  NGS tracking data (Big Data Bowl) ───┤   (same representation;
+   = the TRAINING data                 │    film is inference-time input)
                                        ▼
                  ┌─────────────────────────────────────────────┐
-                 │ Feature engineering: alignment, depth,       │
-                 │ leverage, rotation, man/zone movement cues   │
+                 │ Player filtering (film only): jersey-color   │
+                 │ team split, referee rejection, line drop     │
+                 └─────────────────────────────────────────────┘
+                                       ▼
+                 ┌─────────────────────────────────────────────┐
+                 │ Feature engineering: alignment/shell, depth, │
+                 │ rotation, man/zone movement cues             │
                  └─────────────────────────────────────────────┘
                                        │
                                        ▼
                  ┌─────────────────────────────────────────────┐
-                 │ PyTorch sequence model: Cover 0/1/2/3/4/6,   │
-                 │ man vs. zone — pre-snap shell vs. post-snap  │
+                 │ Coverage classifier: Cover 0/1/2/3/4/6,      │
+                 │ man vs. zone — shown (pre-snap) vs. run      │
+                 │ (gradient boosting now → PyTorch sequence)   │
                  └─────────────────────────────────────────────┘
                                        │
                                        ▼
-                    Disguise detection: pre-snap ≠ post-snap
+                    Disguise detection: shown ≠ run
 ```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how each stage is computed
+and what is built vs. planned.
 
 ### Key design insight
 
