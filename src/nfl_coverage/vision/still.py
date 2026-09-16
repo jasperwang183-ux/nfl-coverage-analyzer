@@ -18,7 +18,9 @@ from nfl_coverage.features.alignment import snapshot_features
 from nfl_coverage.models.persist import predict_proba
 
 
-def frame_from_points(field_xy: np.ndarray, los: float, offense: str) -> pd.DataFrame:
+def frame_from_points(
+    field_xy: np.ndarray, los: float, offense: str, side: np.ndarray | None = None
+) -> pd.DataFrame:
     """Build a canonical single-frame DataFrame from field-space player positions.
 
     field_xy : (N, 2) player positions in yards (same frame as the calibration).
@@ -26,10 +28,10 @@ def frame_from_points(field_xy: np.ndarray, los: float, offense: str) -> pd.Data
     offense  : 'left' or 'right' — which side of the LOS the offense occupies
                in these coordinates. Output is standardized to offense -> right,
                matching the tracking datasets.
-
-    Side is a hard split at the LOS (ties go to offense); there is no ball
-    position to disambiguate players straddling the line, so homography error
-    near the LOS can flip a press defender's side.
+    side     : optional per-player 'Offense'/'Defense' labels (e.g. from jersey
+               color clustering, `vision.teams`). Preferred: the fallback is a
+               hard split at the LOS (ties go to offense), which homography
+               error near the line can flip.
     """
     if offense not in ("left", "right"):
         raise ValueError(f"offense must be 'left' or 'right', got {offense!r}")
@@ -43,7 +45,12 @@ def frame_from_points(field_xy: np.ndarray, los: float, offense: str) -> pd.Data
         pts[:, 1] = FIELD_WIDTH - pts[:, 1]
         los = FIELD_LENGTH - los
 
-    side = np.where(pts[:, 0] <= los, "Offense", "Defense")
+    if side is None:
+        side = np.where(pts[:, 0] <= los, "Offense", "Defense")
+    else:
+        side = np.asarray(side)
+        if side.shape[0] != len(pts):
+            raise ValueError(f"side has {side.shape[0]} labels for {len(pts)} points")
 
     df = pd.DataFrame(
         {
@@ -70,6 +77,24 @@ def frame_from_points(field_xy: np.ndarray, los: float, offense: str) -> pd.Data
     if off.any():
         df.loc[df.loc[off, "x"].idxmin(), "position"] = "QB"
     return finalize(df, dataset="still")
+
+
+def line_player_mask(frame: pd.DataFrame, depth: float = 2.5, halfwidth: float = 4.5) -> pd.Series:
+    """Mark players on either line of scrimmage (OL, DL, under-center QB).
+
+    The tracking datasets the models trained on carry coverage-relevant players
+    only — no linemen on either side (training mean ~7 defenders vs 11 on the
+    field) — so a still must drop the box bodies to match that distribution.
+    A line player is within `depth` yards of the LOS *and* within `halfwidth`
+    yards of the line cluster's y-center (receivers and press corners are on the
+    LOS too, but wide of it).
+    """
+    los = frame.loc[frame["side"] == "Offense", "x"].quantile(0.75)
+    near = (frame["x"] - los).abs() < depth
+    if not near.any():
+        return pd.Series(False, index=frame.index)
+    center = frame.loc[near, "y"].median()
+    return near & ((frame["y"] - center).abs() < halfwidth)
 
 
 def predict_shown(frame: pd.DataFrame, bundle: dict) -> pd.Series:
