@@ -42,3 +42,17 @@ def detect_people(
 def foot_points(detections: list[Detection]) -> np.ndarray:
     """(N, 2) array of foot-point pixels."""
     return np.array([d.foot_point for d in detections], dtype=np.float32).reshape(-1, 2)
+
+
+def dedupe_mask(field_xy: np.ndarray, confs: list[float], min_dist: float = 0.8) -> np.ndarray:
+    """Drop overlapping duplicate detections of the same body.
+
+    Greedy in confidence order: keep a detection only if no already-kept one
+    projects within `min_dist` yards of it on the field. Returns a boolean mask.
+    """
+    keep = np.zeros(len(field_xy), dtype=bool)
+    for i in np.argsort(confs)[::-1]:
+        d = np.hypot(*(field_xy[keep] - field_xy[i]).T) if keep.any() else np.array([np.inf])
+        if (d >= min_dist).all():
+            keep[i] = True
+    return keep
