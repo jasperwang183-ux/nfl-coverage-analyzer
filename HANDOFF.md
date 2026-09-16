@@ -21,6 +21,18 @@ agreed 2026-09-16. Remaining vision niggles: 1-2 DL wide of the box y-band survi
 the line filter; merged O-line blobs undercount offense (harmless — they'd be
 dropped anyway).
 
+**TODO — field-visibility guard (small, high value):** the model cannot tell a
+*cropped* player from an *absent* one — a camera angle that cuts off a deep
+safety makes a two-high shell read as Cover 0, silently. We already have the
+homography, so: project the image corners into field coords and require the
+analysis-critical region (full width, ~3 yd behind LOS to ~18 yd beyond) to lie
+inside the visible polygon; refuse/caveat the call otherwise. Add a plausibility
+band on the coverage-defender count (< 5 detected → warn). Note the model itself
+has no concept of 11-a-side — training carries coverage players only (mean 7.2
+defenders), so 9 is in-distribution; the danger is only the unobserved-player
+case. Longer term: player-dropout augmentation when training the sequence model
+so partial views degrade gracefully.
+
 ---
 
 # Original handoff — 2026-09-11
