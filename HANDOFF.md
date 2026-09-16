@@ -1,4 +1,29 @@
-# Session Handoff — 2026-09-11
+# Session Handoff — updated 2026-09-16
+
+## Update 2026-09-16: domain-gap fixes landed (`1f7a57a`)
+
+Priority 1 from the plan below is done: `vision/teams.py` (jersey-color clustering,
+L down-weighted 0.3x; referees = color outliers; sides by geometry where certain
+±2.5 yd of LOS, by cluster color in the contested band), `line_player_mask` (drops
+both lines to match coverage-only training data), and field-space detection dedupe.
+28 tests pass.
+
+KC-CIN re-run (`--no-log`): 16 mixed "defenders" → **9 clean coverage defenders,
+zero cross-team side errors**. Call moved from COVER_1_MAN 32% to **COVER_4_ZONE
+31% / COVER_3_ZONE 25%** — a two-high quarters read on a play that *ran* Cover 3
+after rotating post-snap. That shown-vs-run disagreement is the disguise signal the
+product exists to surface, so this is arguably correct behavior for a shown-model,
+not a miss. `data/stills/kc-cin_presnap_analyzed_v2.png` has the annotation.
+
+Next: disguise-analysis module (promote out of train_baseline.py; per-team/down/
+distance rates), then branch for A/B disguise-algorithm variants per the plan
+agreed 2026-09-16. Remaining vision niggles: 1-2 DL wide of the box y-band survive
+the line filter; merged O-line blobs undercount offense (harmless — they'd be
+dropped anyway).
+
+---
+
+# Original handoff — 2026-09-11
 
 ## What landed
 
