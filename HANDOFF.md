@@ -15,9 +15,29 @@ after rotating post-snap. That shown-vs-run disagreement is the disguise signal 
 product exists to surface, so this is arguably correct behavior for a shown-model,
 not a miss. `data/stills/kc-cin_presnap_analyzed_v2.png` has the annotation.
 
-Next: disguise-analysis module (promote out of train_baseline.py; per-team/down/
-distance rates), then branch for A/B disguise-algorithm variants per the plan
-agreed 2026-09-16. Remaining vision niggles: 1-2 DL wide of the box y-band survive
+Next: disguise-analysis module, planned 2026-09-16 as follows. First, on main:
+scaffolding (shown/run predictions + play context joins) and the **evaluation
+harness** — there are no ground-truth disguise labels, so fix the success
+criteria up front (face validity on disguise-heavy defenses, cross-component
+agreement, viz_play.py spot-checks of top flags; the KC-CIN play must flag).
+Then **branch one worktree session per component**, each implementing the same
+interface (canonical frames in → per-play score + evidence out), decomposed by
+how real DCs disguise coverages:
+
+1. **Shell rotation** — n_deep / MOF open-vs-closed change, snap → +2.5 s (the
+   most common disguise; the KC-CIN play is one).
+2. **Corner technique lies** — widest defenders' depth trajectory vs. snap
+   alignment (press-then-bail = Cover 3 bail; soft-then-squat = Cover 2 trap).
+3. **Pressure bluffs / sim pressures** — box bodies dropping out post-snap
+   paired with non-box bodies inserting as rushers.
+4. **Late rotation & motion response** — pre-snap-window movement; declares a
+   bdb2021-only data dependency (2026 has no pre-snap frames).
+5. **Man/zone masking** — man-looking leverage playing zone; composition of
+   2 + 4 + man_mirror_frac dynamics.
+
+Merge components, then aggregate into a play-level disguise score **plus a
+taxonomy label** (rotation disguise / pressure bluff / technique lie). The A/B
+comparison lives at the aggregation layer, evaluated by the shared harness. Remaining vision niggles: 1-2 DL wide of the box y-band survive
 the line filter; merged O-line blobs undercount offense (harmless — they'd be
 dropped anyway).
 
