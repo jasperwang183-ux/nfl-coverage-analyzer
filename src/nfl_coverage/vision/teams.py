@@ -99,3 +99,90 @@ def sides_from_clusters(
         cluster_side = "Offense" if on_off_side[voters].mean() > 0.5 else "Defense"
         sides[members & ~certain] = cluster_side
     return sides.astype(str)
+
+
+# Officials: black-and-white stripes blur into a mid-gray, chroma-neutral torso at
+# broadcast resolution, which the L down-weighting then confuses with a white
+# jersey. White jerseys are far brighter (L > ~190), colored jerseys carry chroma.
+REF_MAX_L = 190.0
+REF_MAX_CHROMA_A = 7.0
+REF_MAX_CHROMA_B = 9.0
+REF_MIN_DARK_FRAC = 0.08  # stripe remnants: some clearly dark pixels survive the blur
+REF_DARK_L = 70.0
+
+
+def referee_mask(image: np.ndarray, boxes: list[tuple[float, float, float, float]]) -> np.ndarray:
+    """True where a detection's torso is a chroma-neutral mid-gray: a striped official.
+
+    Same torso crop and grass mask as `torso_colors`. A gray torso qualifies when
+    it is neither white-bright nor colored, and either carries dark stripe pixels
+    or is simply too dark to be a white jersey.
+    """
+    import cv2
+
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    out = np.zeros(len(boxes), dtype=bool)
+    for i, (x1, y1, x2, y2) in enumerate(boxes):
+        w, h = x2 - x1, y2 - y1
+        rows = slice(int(y1 + 0.15 * h), int(y1 + 0.55 * h))
+        cols = slice(int(x1 + 0.25 * w), int(x1 + 0.75 * w))
+        crop_hsv, crop_lab = hsv[rows, cols].reshape(-1, 3), lab[rows, cols].reshape(-1, 3)
+        if len(crop_lab) < 20:
+            continue
+        grass = (
+            (crop_hsv[:, 0] >= 35)
+            & (crop_hsv[:, 0] <= 90)
+            & (crop_hsv[:, 1] > 50)
+            & (crop_hsv[:, 2] > 40)
+        )
+        px = crop_lab[~grass] if (~grass).sum() >= 20 else crop_lab
+        L, a, b = np.median(px, axis=0)
+        neutral = abs(a - 128) <= REF_MAX_CHROMA_A and abs(b - 128) <= REF_MAX_CHROMA_B
+        dark_frac = (px[:, 0] < REF_DARK_L).mean()
+        out[i] = neutral and L < REF_MAX_L and (dark_frac >= REF_MIN_DARK_FRAC or L < 150)
+    return out
+
+
+class TeamColors:
+    """The two team-color centers of a play and which side each one plays.
+
+    Learned on the pre-snap frame, where geometry decides sides reliably, and
+    applied to later frames where it does not (receivers cross the LOS, corners
+    trail them): post-snap, jersey color is the only honest side signal.
+    """
+
+    def __init__(self, centers: np.ndarray, sides: tuple[str, str]):
+        self.centers = np.asarray(centers, dtype=float)  # (2, 3) scaled Lab
+        self.sides = tuple(sides)
+
+    @classmethod
+    def from_frame(
+        cls, colors: np.ndarray, labels: np.ndarray, is_player: np.ndarray, sides: np.ndarray
+    ) -> TeamColors:
+        """Cluster centers + majority side per cluster from one frame's assignment.
+
+        `sides` is per *player* (length is_player.sum()), as `sides_from_clusters`
+        returns it; `labels`/`colors` are per detection.
+        """
+        scaled = np.asarray(colors, dtype=float) * np.array([L_WEIGHT, 1.0, 1.0])
+        player_labels = labels[is_player]
+        player_colors = scaled[is_player]
+        centers, cluster_sides = [], []
+        for k in (0, 1):
+            m = player_labels == k
+            centers.append(player_colors[m].mean(axis=0) if m.any() else np.full(3, np.nan))
+            votes = sides[m]
+            is_off = m.any() and (votes == "Offense").mean() > 0.5
+            cluster_sides.append("Offense" if is_off else "Defense")
+        return cls(np.array(centers), (cluster_sides[0], cluster_sides[1]))
+
+    def assign(self, colors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """(sides, is_player) for new detections by nearest team color."""
+        scaled = np.asarray(colors, dtype=float) * np.array([L_WEIGHT, 1.0, 1.0])
+        dist = np.linalg.norm(scaled[:, None, :] - self.centers[None, :, :], axis=2)
+        dist = np.where(np.isnan(dist), np.inf, dist)
+        nearest = dist.argmin(axis=1)
+        is_player = dist.min(axis=1) <= OUTLIER_DIST
+        sides = np.array([self.sides[k] for k in nearest], dtype=str)
+        return sides, is_player

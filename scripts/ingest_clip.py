@@ -155,7 +155,9 @@ def main() -> None:
     print("\nanalyzing pre-snap frame...")
     pre = analyze_image(paths[pre_i], calib, args.los, args.offense, args.yolo, args.conf)
     print("analyzing post-snap frame...")
-    run = analyze_image(paths[run_i], run_calib, args.los, args.offense, args.yolo, args.conf)
+    run = analyze_image(
+        paths[run_i], run_calib, args.los, args.offense, args.yolo, args.conf, reference=pre.teams
+    )
     run.caveats = camera_caveats + run.caveats
     shells = clip_shells(pre, run, RUN_DEEP_DEPTH)
     label, score = shell_change_label(

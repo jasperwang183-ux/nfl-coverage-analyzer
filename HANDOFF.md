@@ -31,6 +31,17 @@ What landed:
   zoomed unless `--run-calib` (a second calibration for the post-snap frame)
   or `--force` is given.
 
+**Post-snap side assignment (fixed after the analyst review of `run_analyzed.png`):**
+`sides_from_clusters` decides by position relative to the LOS, which is only
+true before the snap — once receivers cross it, geometry labels them defenders.
+Post-snap frames now take sides from `TeamColors` (cluster centers + side per
+cluster, learned on the pre-snap frame, `vision/teams.py`) by nearest jersey
+color only. Officials: black-and-white stripes blur to a chroma-neutral
+mid-gray torso (L ≈ 123 on film) that the L down-weighting confused with white
+jerseys; `referee_mask` rejects neutral gray torsos below L 190 with dark
+stripe pixels. Both applied in `vision/clip.analyze_image`; the still script
+uses the referee mask too.
+
 **Finding on the KC-CIN stills stitched as a clip:** the broadcast camera moved
 106 px and zoomed 0.85x between the pre-snap and +1 s frames, so one
 calibration cannot serve both; the guard refuses, correctly. With `--force`
