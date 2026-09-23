@@ -31,6 +31,7 @@ from nfl_coverage.vision.detect import dedupe_mask, detect_people, foot_points
 from nfl_coverage.vision.homography import FieldCalibration, on_field
 from nfl_coverage.vision.still import frame_from_points, line_player_mask
 from nfl_coverage.vision.teams import cluster_teams, sides_from_clusters, torso_colors
+from nfl_coverage.vision.visibility import check_visibility, defender_count_warnings
 
 STATUS_COLORS = {  # BGR
     "Offense": (60, 180, 60),
@@ -77,6 +78,12 @@ def main() -> None:
         action="store_true",
         help="do not append to the review log (for experiments/re-runs of a reviewed play)",
     )
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="refuse to call coverage when the analysis region is not fully in frame "
+        "(default: make the call, but caveat it)",
+    )
     args = ap.parse_args()
     out = args.out or args.image.with_name(args.image.stem + "_analyzed.png")
 
@@ -84,6 +91,14 @@ def main() -> None:
     if img is None:
         raise SystemExit(f"could not read {args.image}")
     calib = FieldCalibration.load(args.calib)
+
+    # field-visibility guard: the model cannot tell a cropped player from an absent
+    # one, so check the region the read depends on is actually in frame first
+    vis = check_visibility(calib, img.shape, args.los, args.offense)
+    print(vis.summary())
+    if not vis.ok and args.strict:
+        raise SystemExit("refusing to call coverage on a partial view (drop --strict to caveat)")
+
     detections = detect_people(args.image, args.yolo, args.conf)
     keep = on_field(calib.to_field(foot_points(detections)))
     detections = [d for d, k in zip(detections, keep) if k]
@@ -115,6 +130,12 @@ def main() -> None:
         f"{int(line.sum())} line players, {int((~is_player).sum())} non-players"
     )
 
+    caveats = list(vis.warnings) + defender_count_warnings(int(n_def))
+    if caveats:
+        print("\nCAVEATS — this call is not fully supported by what the camera sees:")
+        for c in caveats:
+            print(f"  ! {c}")
+
     feats = snapshot_features(analysis)
     ranked = predict_proba(load_bundle(args.model), feats).iloc[0].sort_values(ascending=False)
     print("\nshown coverage (top 3):")
@@ -129,6 +150,7 @@ def main() -> None:
             final=final,
             probabilities=ranked.to_dict(),
             features=feats.iloc[0].drop(KEYS).to_dict(),
+            caveats=caveats,
         )
         if final != ranked.index[0]:
             print(f"corrected to {final} (logged to {REVIEWS_PATH.name} for retraining)")
@@ -136,14 +158,23 @@ def main() -> None:
     for det, st in zip(detections, status):
         x1, y1, x2, y2 = map(int, det.box)
         cv2.rectangle(img, (x1, y1), (x2, y2), STATUS_COLORS[st], 2)
+    # the region the read needs, projected into the image: where it leaves the
+    # frame is where players can be missing
+    cv2.polylines(
+        img, [vis.region_pixels.round().astype(np.int32)], True, (0, 215, 255), 2, cv2.LINE_AA
+    )
     if final == ranked.index[0]:
         label = f"shown: {final} ({ranked.iloc[0]:.0%})"
     else:
         label = f"shown: {final} (corrected; model said {ranked.index[0]})"
-    cv2.putText(img, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 0), 4, cv2.LINE_AA)
-    cv2.putText(
-        img, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2, cv2.LINE_AA
-    )
+    if caveats:
+        label += "  [PARTIAL VIEW]"
+    lines = [(label, 0.9, (255, 255, 255))] + [(f"! {c}", 0.55, (0, 215, 255)) for c in caveats]
+    y = 30
+    for text, scale, color in lines:
+        cv2.putText(img, text, (10, y), cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0), 4, cv2.LINE_AA)
+        cv2.putText(img, text, (10, y), cv2.FONT_HERSHEY_SIMPLEX, scale, color, 2, cv2.LINE_AA)
+        y += int(40 * scale)
     cv2.imwrite(str(out), img)
     print(f"\nannotated -> {out}")
 

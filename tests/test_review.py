@@ -35,11 +35,21 @@ class TestReviewLog:
         feats = {"snap_n_defenders": 11.0, "snap_max_depth": np.nan}
 
         record_review("a.png", "COVER_3_ZONE", "COVER_3_ZONE", probs, feats, path=path)
-        record_review("b.png", "COVER_3_ZONE", "COVER_1_MAN", probs, feats, path=path)
+        record_review(
+            "b.png",
+            "COVER_3_ZONE",
+            "COVER_1_MAN",
+            probs,
+            feats,
+            path=path,
+            caveats=["deep zone beyond 12 yd is off-frame"],
+        )
 
         log = load_reviews(path)
         assert len(log) == 2
         assert log["accepted"].tolist() == [True, False]
+        # pipeline doubts ride along so caveated corrections can be weighted down
+        assert log["caveats"].tolist() == [[], ["deep zone beyond 12 yd is off-frame"]]
         assert log["final"].tolist() == ["COVER_3_ZONE", "COVER_1_MAN"]
         assert log["confidence"].iloc[0] == pytest.approx(0.55)
         # features survive as retraining-ready values, NaN included

@@ -53,8 +53,14 @@ def record_review(
     probabilities: dict[str, float],
     features: dict[str, float],
     path: Path = REVIEWS_PATH,
+    caveats: list[str] | None = None,
 ) -> dict:
-    """Append one review to the JSONL log; returns the record written."""
+    """Append one review to the JSONL log; returns the record written.
+
+    `caveats` are the vision pipeline's own doubts about the input (partial field
+    view, implausible defender count); a corrected call on a caveated play is
+    weaker retraining evidence than one on a clean view.
+    """
     record = {
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "image": str(image),
@@ -64,6 +70,7 @@ def record_review(
         "accepted": final == predicted,
         "probabilities": {k: round(float(v), 4) for k, v in probabilities.items()},
         "features": {k: None if pd.isna(v) else float(v) for k, v in features.items()},
+        "caveats": list(caveats or []),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
