@@ -79,7 +79,9 @@ def frame_from_points(
     return finalize(df, dataset="still")
 
 
-def line_player_mask(frame: pd.DataFrame, depth: float = 2.5, halfwidth: float = 4.5) -> pd.Series:
+def line_player_mask(
+    frame: pd.DataFrame, depth: float = 2.5, halfwidth: float = 4.5, los: float | None = None
+) -> pd.Series:
     """Mark players on either line of scrimmage (OL, DL, under-center QB).
 
     The tracking datasets the models trained on carry coverage-relevant players
@@ -87,9 +89,12 @@ def line_player_mask(frame: pd.DataFrame, depth: float = 2.5, halfwidth: float =
     field) — so a still must drop the box bodies to match that distribution.
     A line player is within `depth` yards of the LOS *and* within `halfwidth`
     yards of the line cluster's y-center (receivers and press corners are on the
-    LOS too, but wide of it).
+    LOS too, but wide of it). The LOS is read off the offense's alignment unless
+    given (canonical coords) — a post-snap frame must pass it, since the
+    offense has moved by then.
     """
-    los = frame.loc[frame["side"] == "Offense", "x"].quantile(0.75)
+    if los is None:
+        los = frame.loc[frame["side"] == "Offense", "x"].quantile(0.75)
     near = (frame["x"] - los).abs() < depth
     if not near.any():
         return pd.Series(False, index=frame.index)

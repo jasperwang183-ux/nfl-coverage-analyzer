@@ -42,13 +42,27 @@ jerseys; `referee_mask` rejects neutral gray torsos below L 190 with dark
 stripe pixels. Both applied in `vision/clip.analyze_image`; the still script
 uses the referee mask too.
 
+**Calibration transfer (`--transfer-calib`):** a broadcast camera on a fixed
+mount pans/tilts/zooms about its center, so frame A -> frame B is an exact
+homography; `vision/clip.transfer_calibration` estimates it from ORB matches
+and pushes frame A's clicked landmarks through it, refitting frame B's
+calibration with no clicks (KC-CIN: 182 inliers, reprojection unchanged at
+0.39 yd; landmarks verified on hash rows, the 50 through the logo, the far
+"30"). The line filter now takes the snap LOS on post-snap frames (the offense
+has moved, so its alignment no longer marks the line).
+
 **Finding on the KC-CIN stills stitched as a clip:** the broadcast camera moved
 106 px and zoomed 0.85x between the pre-snap and +1 s frames, so one
 calibration cannot serve both; the guard refuses, correctly. With `--force`
 the read came out 2-high open -> 2-high closed (a rotation to a post safety),
-but that number is not trustworthy. Next for film: calibrate the post-snap
-frame separately (`calibrate_still.py` on `data/clips/kc-cin_clip/frame_002_*.png`,
-then `--run-calib`), or get true all-22 footage where the camera holds.
+but that number is not trustworthy. With the transferred calibration the +2 s
+frame reads **2-high MOF-open -> no rotation** (two deep Bengals on the far
+side, nobody in the deep middle, near-sideline strip y < 14 cropped); the throw
+frame is zoomed so tight that only 3 coverage defenders are in frame (read
+0-high, caveated). So on this footage the Cover 3 rotation the analyst saw is
+not visible in the two later frames the camera gives us — either it happened
+off-frame on the cropped near side or after +2 s. A held all-22 camera is
+still the honest test.
 
 Next steps, in order: (1) a real mp4 from the reference videos, calibrated on
 both frames, through `ingest_clip.py`; (2) mechanism components in worktrees

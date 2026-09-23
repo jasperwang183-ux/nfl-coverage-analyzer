@@ -6,7 +6,14 @@ import pytest
 
 from nfl_coverage.analysis.disguise import shell_change_label
 from nfl_coverage.analysis.shell import shell_state
-from nfl_coverage.vision.clip import camera_motion, contact_sheet, motion_scores, sample_frames
+from nfl_coverage.vision.clip import (
+    camera_motion,
+    contact_sheet,
+    motion_scores,
+    sample_frames,
+    transfer_calibration,
+)
+from nfl_coverage.vision.homography import FieldCalibration
 from nfl_coverage.vision.still import frame_from_points
 
 
@@ -102,3 +109,21 @@ class TestCameraMotion:
         img = self._field()
         other = np.random.default_rng(1).integers(0, 255, img.shape, dtype=np.uint8)
         assert camera_motion(img, other).moved
+
+
+def test_transfer_calibration_follows_a_pan_and_zoom():
+    img = TestCameraMotion._field()
+    # frame A calibration: four image corners of a 60 x 40 yd field patch
+    px = np.float32([[40, 30], [600, 30], [600, 330], [40, 330]])
+    field = np.float32([[20, 5], [80, 5], [80, 45], [20, 45]])
+    calib_a = FieldCalibration.from_points(px, field)
+    # the camera pans right and zooms in 20%: a homography between frames
+    H = np.array([[1.2, 0.02, -60.0], [0.01, 1.2, -20.0], [0.0, 0.00005, 1.0]])
+    img_b = cv2.warpPerspective(img, H, (640, 360))
+    t = transfer_calibration(calib_a, img, img_b)
+    assert t.n_inliers >= 30
+    assert t.reprojection_error < 0.2
+    # a point seen in frame B maps to the same field spot as its frame A original
+    pa = np.float32([[300.0, 200.0]])
+    pb = cv2.perspectiveTransform(pa.reshape(-1, 1, 2), H).reshape(-1, 2)
+    assert np.allclose(t.calibration.to_field(pb), calib_a.to_field(pa), atol=0.5)
