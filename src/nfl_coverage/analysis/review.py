@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -62,7 +62,7 @@ def record_review(
     weaker retraining evidence than one on a clean view.
     """
     record = {
-        "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
         "image": str(image),
         "predicted": predicted,
         "confidence": round(float(probabilities[predicted]), 4),

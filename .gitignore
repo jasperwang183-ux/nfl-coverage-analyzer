@@ -1,6 +1,8 @@
 # Data — Kaggle competition data must not be redistributed
 data/raw/
 data/processed/
+data/stills/
+data/clips/
 *.csv
 *.parquet
 *.zip
