@@ -36,6 +36,7 @@ from nfl_coverage.vision.clip import (
     motion_scores,
     sample_frames,
     save_frames,
+    transfer_calibration,
 )
 from nfl_coverage.vision.homography import FieldCalibration
 
@@ -97,6 +98,12 @@ def main() -> None:
         help="separate calibration for the post-snap frame (needed when the camera moved)",
     )
     ap.add_argument(
+        "--transfer-calib",
+        action="store_true",
+        help="when the camera moved, derive the post-snap calibration from the pre-snap one "
+        "through the frame-to-frame homography (saved next to the frames)",
+    )
+    ap.add_argument(
         "--force", action="store_true", help="compare the frames even if the camera moved"
     )
     ap.add_argument("--los", type=float, required=True, help="line of scrimmage x (yards, 0-120)")
@@ -137,12 +144,22 @@ def main() -> None:
     # zoom after the snap, and a moved camera makes the post-snap read meaningless
     cam = camera_motion(samples[pre_i].image, samples[run_i].image)
     camera_caveats = []
-    if cam.moved and args.run_calib is None:
+    if cam.moved and args.run_calib is None and args.transfer_calib:
+        t = transfer_calibration(calib, samples[pre_i].image, samples[run_i].image)
+        run_calib = t.calibration
+        run_calib.save(out_dir / f"frame_{run_i:03d}.calibration.json")
+        print(
+            f"camera moved ({cam.reason}); post-snap calibration transferred through the "
+            f"frame homography: {t.n_inliers} inliers, reprojection {t.reprojection_error:.2f} yd "
+            f"-> {out_dir / f'frame_{run_i:03d}.calibration.json'}"
+        )
+    elif cam.moved and args.run_calib is None:
         msg = f"camera moved between frames #{pre_i} and #{run_i} ({cam.reason})"
         if not args.force:
             raise SystemExit(
                 f"{msg}.\nCalibrate the post-snap frame on its own "
                 f"(scripts/calibrate_still.py {paths[run_i]}) and pass --run-calib, "
+                "pass --transfer-calib to derive it from the camera motion, "
                 "or --force to compare anyway (the read will be wrong)."
             )
         camera_caveats.append(msg + " — post-snap positions are unreliable")

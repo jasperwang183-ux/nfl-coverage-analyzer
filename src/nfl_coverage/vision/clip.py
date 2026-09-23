@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 from nfl_coverage.analysis.shell import shell_state
+from nfl_coverage.config import FIELD_LENGTH
 from nfl_coverage.features.alignment import KEYS, _los_estimate
 from nfl_coverage.vision.detect import dedupe_mask, detect_people, foot_points
 from nfl_coverage.vision.homography import FieldCalibration, on_field
@@ -142,30 +143,73 @@ def camera_motion(
     (a cut to another camera leaves nothing to match).
     """
     w = img_a.shape[1]
-    work_w = 960
-    f = work_w / w
+    pa, pb = _match_features(img_a, img_b)
+    if len(pa) < 8:
+        return CameraMotion(np.nan, np.nan, 0, True, "too few features to match")
+    M, inl = cv2.estimateAffinePartial2D(pa, pb, method=cv2.RANSAC, ransacReprojThreshold=3.0)
+    n_inl = int(inl.sum()) if inl is not None else 0
+    if M is None or n_inl < min_inliers:
+        return CameraMotion(np.nan, np.nan, n_inl, True, "frames do not match (camera cut?)")
+    scale = float(np.hypot(M[0, 0], M[0, 1]))
+    shift = float(np.hypot(M[0, 2], M[1, 2]))
+    moved = shift > max_shift_frac * w or abs(scale - 1.0) > max_scale_dev
+    reason = f"shift {shift:.0f} px, zoom x{scale:.3f}, {n_inl} inliers" if moved else ""
+    return CameraMotion(shift, scale, n_inl, bool(moved), reason)
+
+
+def _match_features(
+    img_a: np.ndarray, img_b: np.ndarray, work_w: int = 960, keep: int = 500
+) -> tuple[np.ndarray, np.ndarray]:
+    """ORB matches between two frames, as (N, 2) pixel arrays in original coordinates."""
+    f = work_w / img_a.shape[1]
     ga = cv2.cvtColor(cv2.resize(img_a, None, fx=f, fy=f), cv2.COLOR_BGR2GRAY)
     gb = cv2.cvtColor(cv2.resize(img_b, None, fx=f, fy=f), cv2.COLOR_BGR2GRAY)
     orb = cv2.ORB_create(3000)
     ka, da = orb.detectAndCompute(ga, None)
     kb, db = orb.detectAndCompute(gb, None)
     if da is None or db is None or len(ka) < 8 or len(kb) < 8:
-        return CameraMotion(np.nan, np.nan, 0, True, "too few features to match")
+        return np.zeros((0, 2), np.float32), np.zeros((0, 2), np.float32)
     matches = sorted(
         cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True).match(da, db), key=lambda m: m.distance
-    )
-    matches = matches[:500]
-    pa = np.float32([ka[m.queryIdx].pt for m in matches])
-    pb = np.float32([kb[m.trainIdx].pt for m in matches])
-    M, inl = cv2.estimateAffinePartial2D(pa, pb, method=cv2.RANSAC, ransacReprojThreshold=3.0)
+    )[:keep]
+    pa = np.float32([ka[m.queryIdx].pt for m in matches]) / f
+    pb = np.float32([kb[m.trainIdx].pt for m in matches]) / f
+    return pa, pb
+
+
+@dataclass
+class TransferredCalibration:
+    calibration: FieldCalibration
+    n_inliers: int
+    frame_homography: np.ndarray  # (3, 3) pixels in frame A -> pixels in frame B
+    reprojection_error: float  # yards, of the transferred landmarks under the refit
+
+
+def transfer_calibration(
+    calib_a: FieldCalibration, img_a: np.ndarray, img_b: np.ndarray, min_inliers: int = 30
+) -> TransferredCalibration:
+    """Carry frame A's field calibration to frame B through the camera's motion.
+
+    A broadcast camera on a fixed mount pans, tilts and zooms about its optical
+    center, and such a motion maps frame A to frame B by an exact homography.
+    Matched field features (lines, numbers, logos; players are RANSAC
+    outliers) give that homography; frame A's clicked landmarks are pushed
+    through it and refit against the same field coordinates, so frame B gets a
+    calibration without anyone clicking on it. The refit's reprojection error
+    is the sanity number: it should stay near frame A's.
+    """
+    pa, pb = _match_features(img_a, img_b)
+    if len(pa) < min_inliers:
+        raise ValueError(f"only {len(pa)} feature matches between frames; cannot transfer")
+    H, inl = cv2.findHomography(pa, pb, cv2.RANSAC, 3.0)
     n_inl = int(inl.sum()) if inl is not None else 0
-    if M is None or n_inl < min_inliers:
-        return CameraMotion(np.nan, np.nan, n_inl, True, "frames do not match (camera cut?)")
-    scale = float(np.hypot(M[0, 0], M[0, 1]))
-    shift = float(np.hypot(M[0, 2], M[1, 2]) / f)
-    moved = shift > max_shift_frac * w or abs(scale - 1.0) > max_scale_dev
-    reason = f"shift {shift:.0f} px, zoom x{scale:.3f}, {n_inl} inliers" if moved else ""
-    return CameraMotion(shift, scale, n_inl, bool(moved), reason)
+    if H is None or n_inl < min_inliers:
+        raise ValueError(f"frame-to-frame homography unreliable ({n_inl} inliers)")
+    moved_px = cv2.perspectiveTransform(
+        calib_a.pixel_points.reshape(-1, 1, 2).astype(np.float32), H
+    ).reshape(-1, 2)
+    calib_b = FieldCalibration.from_points(moved_px, calib_a.field_points)
+    return TransferredCalibration(calib_b, n_inl, H, calib_b.reprojection_error())
 
 
 @dataclass
@@ -226,7 +270,10 @@ def analyze_image(
     status[is_player] = sides
 
     frame = frame_from_points(field_xy[is_player], los, offense, side=sides)
-    line = line_player_mask(frame)
+    # post-snap the offense has left the line, so the line filter gets the snap
+    # LOS explicitly (canonical coords: frame_from_points mirrors 'right' plays)
+    canonical_los = FIELD_LENGTH - los if offense == "right" else los
+    line = line_player_mask(frame, los=canonical_los if reference is not None else None)
     status[np.flatnonzero(is_player)[line.to_numpy()]] = "Line"
     analysis = frame[~line.to_numpy()]
     n_def = int((analysis["side"] == "Defense").sum())
