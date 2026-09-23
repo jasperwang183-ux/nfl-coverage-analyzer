@@ -1,4 +1,51 @@
-# Session Handoff — updated 2026-09-16
+# Session Handoff — updated 2026-09-23
+
+## Update 2026-09-23 (later): disguise harness, shell reader, clip ingester
+
+Methodology and calibration table: `docs/DISGUISE_PLAN.md`. Decisions that
+changed from the 09-16 plan: **no hand-labeling of rendered tracking plays**;
+ground truth is (a) the coverage label's implied middle-of-field state, which
+scores the post-snap read on every labeled play, and (b) film confirmations
+through the clip ingester. Disguise metric = pre-snap read ≠ post-snap read.
+
+What landed:
+- `analysis/shell.py` — rule-based shell reader (deep count, MOF open/closed,
+  corner depth, box), one frame in, works on tracking frames and stills alike;
+  explicit `los`/`center` for unlinked post-snap stills.
+- `analysis/disguise.py` — `shell_rotation` (snap vs +2.0 s, per-defender
+  evidence, labels `rotate_to_mof_closed/open`, `rotation_down/up` score 1;
+  `corner_bail`, `threshold_flicker` score 0.25), `model_disagreement`,
+  `shell_change_label` for two unlinked reads.
+- `analysis/harness.py` + `scripts/run_disguise.py` — scores every cached week,
+  joins play context (`data/context.py`), prints run-shell MOF accuracy vs
+  label, flag rates by defense/down/distance, component agreement, audit
+  queue; `disguise_labels.jsonl` log + precision/recall when labels exist.
+- Week-1 numbers (both seasons, 1,682 plays): run-shell MOF accuracy **0.82**;
+  a third of dropbacks flag; shown two-high that flag ran Cover 1/3 82% of the
+  time, unflagged two-high ran Cover 2/4/6 76%. Rates by defense/down look
+  sane (3rd-and-long > 1st-and-10; MIN/ARI top, NO/LAC bottom in 2018 wk 1).
+- `vision/clip.py` + `scripts/ingest_clip.py` — mp4 -> sampled frames +
+  contact sheet -> analyst picks pre-snap and +2 s frames -> still pipeline on
+  each -> shell comparison -> confirm -> log. **Camera-motion guard** (ORB +
+  RANSAC similarity between the two frames) refuses when the camera panned or
+  zoomed unless `--run-calib` (a second calibration for the post-snap frame)
+  or `--force` is given.
+
+**Finding on the KC-CIN stills stitched as a clip:** the broadcast camera moved
+106 px and zoomed 0.85x between the pre-snap and +1 s frames, so one
+calibration cannot serve both; the guard refuses, correctly. With `--force`
+the read came out 2-high open -> 2-high closed (a rotation to a post safety),
+but that number is not trustworthy. Next for film: calibrate the post-snap
+frame separately (`calibrate_still.py` on `data/clips/kc-cin_clip/frame_002_*.png`,
+then `--run-calib`), or get true all-22 footage where the camera holds.
+
+Next steps, in order: (1) a real mp4 from the reference videos, calibrated on
+both frames, through `ingest_clip.py`; (2) mechanism components in worktrees
+(`corner_technique` first — off-corner cushion collapse and press-bail are
+readable from tracking now); (3) sequence model with two heads once film
+confirmations exist to evaluate against. `analyze_still.py` still has its own
+copy of the detection pipeline; `vision/clip.analyze_image` is the function
+form — fold the script onto it when next touched.
 
 ## Update 2026-09-16: domain-gap fixes landed (`1f7a57a`)
 
