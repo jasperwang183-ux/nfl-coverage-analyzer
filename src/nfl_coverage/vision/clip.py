@@ -24,7 +24,13 @@ from nfl_coverage.features.alignment import KEYS, _los_estimate
 from nfl_coverage.vision.detect import dedupe_mask, detect_people, foot_points
 from nfl_coverage.vision.homography import FieldCalibration, on_field
 from nfl_coverage.vision.still import frame_from_points, line_player_mask
-from nfl_coverage.vision.teams import cluster_teams, sides_from_clusters, torso_colors
+from nfl_coverage.vision.teams import (
+    TeamColors,
+    cluster_teams,
+    referee_mask,
+    sides_from_clusters,
+    torso_colors,
+)
 from nfl_coverage.vision.visibility import check_visibility, defender_count_warnings
 
 
@@ -172,6 +178,7 @@ class FrameAnalysis:
     status: np.ndarray  # per detection: Offense / Defense / Line / Referee
     caveats: list[str] = field(default_factory=list)
     visibility: object = None
+    teams: TeamColors | None = None  # learned here (pre-snap) or inherited (post-snap)
 
 
 def analyze_image(
@@ -181,8 +188,14 @@ def analyze_image(
     offense: str,
     yolo: str = "yolo11s.pt",
     conf: float = 0.3,
+    reference: TeamColors | None = None,
 ) -> FrameAnalysis:
-    """The still pipeline (scripts/analyze_still.py) as a function, no model call."""
+    """The still pipeline (scripts/analyze_still.py) as a function, no model call.
+
+    Without `reference` (a pre-snap frame) sides come from jersey-color clusters
+    voted by geometry. With it (a post-snap frame, where geometry lies because
+    receivers have crossed the LOS) sides come from the nearest team color only.
+    """
     img = cv2.imread(str(image_path))
     if img is None:
         raise ValueError(f"could not read {image_path}")
@@ -196,8 +209,19 @@ def analyze_image(
     detections = [d for d, k in zip(detections, unique) if k]
     field_xy = field_xy[unique]
 
-    labels, is_player = cluster_teams(torso_colors(img, [d.box for d in detections]))
-    sides = sides_from_clusters(labels[is_player], field_xy[is_player, 0], los, offense)
+    boxes = [d.box for d in detections]
+    colors = torso_colors(img, boxes)
+    striped = referee_mask(img, boxes)
+    if reference is None:
+        labels, is_player = cluster_teams(colors)
+        is_player &= ~striped
+        sides = sides_from_clusters(labels[is_player], field_xy[is_player, 0], los, offense)
+        teams = TeamColors.from_frame(colors, labels, is_player, sides)
+    else:
+        all_sides, is_player = reference.assign(colors)
+        is_player &= ~striped
+        sides = all_sides[is_player]
+        teams = reference
     status = np.where(is_player, "", "Referee").astype(object)
     status[is_player] = sides
 
@@ -207,7 +231,7 @@ def analyze_image(
     analysis = frame[~line.to_numpy()]
     n_def = int((analysis["side"] == "Defense").sum())
     caveats = list(vis.warnings) + defender_count_warnings(n_def)
-    return FrameAnalysis(frame, analysis, detections, status, caveats, vis)
+    return FrameAnalysis(frame, analysis, detections, status, caveats, vis, teams)
 
 
 def clip_shells(pre: FrameAnalysis, run: FrameAnalysis, run_deep_depth: float) -> dict:

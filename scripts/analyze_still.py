@@ -30,7 +30,7 @@ from nfl_coverage.models.persist import load_bundle, predict_proba
 from nfl_coverage.vision.detect import dedupe_mask, detect_people, foot_points
 from nfl_coverage.vision.homography import FieldCalibration, on_field
 from nfl_coverage.vision.still import frame_from_points, line_player_mask
-from nfl_coverage.vision.teams import cluster_teams, sides_from_clusters, torso_colors
+from nfl_coverage.vision.teams import cluster_teams, referee_mask, sides_from_clusters, torso_colors
 from nfl_coverage.vision.visibility import check_visibility, defender_count_warnings
 
 STATUS_COLORS = {  # BGR
@@ -112,7 +112,9 @@ def main() -> None:
     )
 
     # jersey-color team split; referees fall out as color outliers
-    labels, is_player = cluster_teams(torso_colors(img, [d.box for d in detections]))
+    boxes = [d.box for d in detections]
+    labels, is_player = cluster_teams(torso_colors(img, boxes))
+    is_player &= ~referee_mask(img, boxes)  # striped officials read as white otherwise
     sides = sides_from_clusters(labels[is_player], field_xy[is_player, 0], args.los, args.offense)
     status = np.where(is_player, "", "Referee").astype(object)
     status[is_player] = sides
