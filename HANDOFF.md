@@ -41,17 +41,37 @@ comparison lives at the aggregation layer, evaluated by the shared harness. Rema
 the line filter; merged O-line blobs undercount offense (harmless — they'd be
 dropped anyway).
 
-**TODO — field-visibility guard (small, high value):** the model cannot tell a
-*cropped* player from an *absent* one — a camera angle that cuts off a deep
-safety makes a two-high shell read as Cover 0, silently. We already have the
-homography, so: project the image corners into field coords and require the
-analysis-critical region (full width, ~3 yd behind LOS to ~18 yd beyond) to lie
-inside the visible polygon; refuse/caveat the call otherwise. Add a plausibility
-band on the coverage-defender count (< 5 detected → warn). Note the model itself
-has no concept of 11-a-side — training carries coverage players only (mean 7.2
-defenders), so 9 is in-distribution; the danger is only the unobserved-player
-case. Longer term: player-dropout augmentation when training the sequence model
-so partial views degrade gracefully.
+## Update 2026-09-23: field-visibility guard landed
+
+`vision/visibility.py` — the model cannot tell a *cropped* player from an
+*absent* one (a camera that cuts off a deep safety makes two-high read as
+single-high, silently), and the defender count cannot catch it because training
+carries coverage players only (mean 7.2). So the guard runs the homography
+backwards: the analysis-critical region (full width, 3 yd behind the LOS to 18
+yd beyond) is projected into pixel space and must sit inside the image (corners
+of a 1 yd depth / 2 yd sideline slack-shrunk region — a ground-plane rectangle
+projects to a convex quad, so corners decide). The report describes what *is*
+usable as the largest fully visible rectangle containing the LOS (`band`,
+`depth_visible`), so slanted image edges give honest caveats ("sideline strip
+y < 16 yd off-frame", "deep zone beyond 16 yd off-frame") rather than a
+pessimistic per-column minimum. Points behind the camera (negative homogeneous
+w, sign taken from the calibration points) count as invisible.
+`defender_count_warnings` adds the 5–11 plausibility band.
+
+`analyze_still.py` prints the caveats, stamps `[PARTIAL VIEW]` + the reasons on
+the annotated image, draws the required region as a yellow quad, and logs
+`caveats` in each review record (`record_review(..., caveats=)`) so caveated
+corrections can be down-weighted at retraining. `--strict` refuses instead.
+
+**Finding:** the KC-CIN still is a partial view — the bottom of the frame cuts
+the near sideline at y ≈ 16 (a boundary WR/CB pair on that side would be
+invisible) and the deep edge reaches ~16 of 18 yd. Both safeties happen to be in
+frame, so the Cover 4 / Cover 3 read stands, but every elevated-broadcast still
+will trip the near-sideline check; expect the caveat to be the norm, not the
+exception, until footage comes from a true all-22 angle.
+
+Longer term: player-dropout augmentation when training the sequence model so
+partial views degrade gracefully.
 
 ---
 
