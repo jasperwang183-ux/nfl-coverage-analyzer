@@ -81,6 +81,7 @@ def structural_read(
     deep_depth: float,
     frame: str,
     caveats: list[str],
+    rel_frame: int = 0,
 ) -> StructuralRead:
     """Read one canonical frame's defense into structure + confidence + reasons.
 
@@ -88,7 +89,7 @@ def structural_read(
     `los`/`center` in canonical coords, `deep_depth` the deep threshold to use
     (DEEP_DEPTH at the snap, deeper after it).
     """
-    d = deep_defenders(analysis, 0, deep_depth=deep_depth, los=los, center=center)
+    d = deep_defenders(analysis, rel_frame, deep_depth=deep_depth, los=los, center=center)
     # an off corner at 9-11 yd is technique, not a deep safety: the widest defender
     # on each side only counts as deep past CORNER_DEEP_DEPTH
     corner_deep = max(deep_depth, CORNER_DEEP_DEPTH)
@@ -119,7 +120,8 @@ def structural_read(
 
     low = d.loc[d["y"].idxmin()] if len(d) else None
     high = d.loc[d["y"].idxmax()] if len(d) else None
-    off = analysis[(analysis["side"] == "Offense") & (analysis["position"] != "QB")]
+    at = analysis[analysis["rel_frame"] == rel_frame]
+    off = at[(at["side"] == "Offense") & (at["position"] != "QB")]
 
     def pressed(row) -> bool:
         if row is None or len(off) == 0:

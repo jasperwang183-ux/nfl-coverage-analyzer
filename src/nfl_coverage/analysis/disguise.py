@@ -52,7 +52,12 @@ def _at_run_frame(frames: pd.DataFrame, run_frames: pd.Series, reader, **kw) -> 
     return pd.concat(parts, ignore_index=True) if parts else reader(frames.iloc[0:0], **kw)
 
 
-def shell_rotation(frames: pd.DataFrame, run_frame: int = RUN_FRAME) -> pd.DataFrame:
+def shell_rotation(
+    frames: pd.DataFrame,
+    run_frame: int = RUN_FRAME,
+    run_deep_depth: float = RUN_DEEP_DEPTH,
+    center: float | None = None,
+) -> pd.DataFrame:
     """Shell at the snap vs. shell at +1.5 s; the most common disguise.
 
     Evidence per play: shown/run shell, who moved most (`rotator_id`,
@@ -62,13 +67,15 @@ def shell_rotation(frames: pd.DataFrame, run_frame: int = RUN_FRAME) -> pd.DataF
     ROTATION_SCORES order; the score is that label's weight.
     """
     run_frames = _run_frame_per_play(frames, run_frame)
-    shown = shell_state(frames, 0).set_index(KEYS)
-    run = _at_run_frame(frames, run_frames, shell_state, deep_depth=RUN_DEEP_DEPTH).set_index(KEYS)
+    shown = shell_state(frames, 0, center=center).set_index(KEYS)
+    run = _at_run_frame(
+        frames, run_frames, shell_state, deep_depth=run_deep_depth, center=center
+    ).set_index(KEYS)
 
-    d0 = deep_defenders(frames, 0).set_index(KEYS + ["nfl_id"])
-    d1 = _at_run_frame(frames, run_frames, deep_defenders, deep_depth=RUN_DEEP_DEPTH).set_index(
-        KEYS + ["nfl_id"]
-    )
+    d0 = deep_defenders(frames, 0, center=center).set_index(KEYS + ["nfl_id"])
+    d1 = _at_run_frame(
+        frames, run_frames, deep_defenders, deep_depth=run_deep_depth, center=center
+    ).set_index(KEYS + ["nfl_id"])
     both = d0[["depth", "deep", "widest"]].join(
         d1[["depth", "deep"]].rename(columns={"depth": "depth1", "deep": "deep1"}), how="inner"
     )
