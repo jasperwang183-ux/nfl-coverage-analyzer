@@ -44,6 +44,17 @@ Results (pre → +2 s, both frames calibrated separately):
   still counts 13 "defenders": two Rams receivers on the far side inside the
   LOS band read as defense (gray-dominant crops) — the residual color error.
 
+**Analyst ground truth (2026-09-24):** clip 1 = Cover 4 (model shown COVER_4
+48%, correct); clip 2 = man look disguising Cover 3 (model shown COVER_1_MAN
+44%, correct as the *shown* call). At +2 s clip 2 still read two-high open —
+the corners were at 6–8 yd, still bailing. At the throw frame (#39, 19.5 s,
+auto-calibrated; note the line identities are the 40-45-50-45-40, i.e. x =
+50…70 — mislabeling them by one line shifted every depth 5 yd and made the
+pocket look like defenders) the read is **3 deep, one 3.5 yd off the ball**:
+Cover 3, all three shaded to the field side. So the 14-yd post-snap threshold
+calibrated on tracking at 2 s is too deep for thirds at the throw on film;
+12 yd reads it. Both verdicts are in `disguise_labels.jsonl`.
+
 Known weak spot: color on small/shaded crops. Next step if it keeps biting: a
 chroma-histogram descriptor per torso (mass in blue / yellow / red / neutral
 bins) matched to team histograms learned on the pre-snap frame, instead of two
