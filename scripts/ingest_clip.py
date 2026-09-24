@@ -27,10 +27,13 @@ import cv2
 
 from nfl_coverage.analysis.disguise import RUN_DEEP_DEPTH, shell_change_label
 from nfl_coverage.analysis.harness import LABELS_PATH, MECHANISMS, record_label
-from nfl_coverage.config import ROOT
+from nfl_coverage.config import FIELD_WIDTH, MODELS_DIR, ROOT
+from nfl_coverage.features.alignment import snapshot_features
+from nfl_coverage.models.persist import load_bundle, predict_proba
 from nfl_coverage.vision.clip import (
     analyze_image,
     camera_motion,
+    clip_report,
     clip_shells,
     contact_sheet,
     motion_scores,
@@ -108,6 +111,12 @@ def main() -> None:
     )
     ap.add_argument("--los", type=float, required=True, help="line of scrimmage x (yards, 0-120)")
     ap.add_argument("--offense", choices=["left", "right"], required=True)
+    ap.add_argument(
+        "--ball-y",
+        type=float,
+        default=None,
+        help="field y of the ball (yards, unflipped); the middle-of-field test is centered on it",
+    )
     ap.add_argument("--every", type=float, default=0.5, help="seconds between sampled frames")
     ap.add_argument("--start", type=float, default=0.0)
     ap.add_argument("--end", type=float, default=None)
@@ -121,6 +130,13 @@ def main() -> None:
         "--imgsz", type=int, default=1280, help="YOLO inference size; 1920 for 2560-wide frames"
     )
     ap.add_argument("--out-dir", type=Path, default=None)
+    ap.add_argument("--model", type=Path, default=MODELS_DIR / "still_shown.joblib")
+    ap.add_argument(
+        "--run-deep",
+        type=float,
+        default=RUN_DEEP_DEPTH,
+        help="deep threshold (yd) for the post-snap read; 14 at +2 s, ~12 at the throw",
+    )
     args = ap.parse_args()
 
     out_dir = args.out_dir or CLIPS_DIR / args.video.stem
@@ -188,7 +204,10 @@ def main() -> None:
         imgsz=args.imgsz,
     )
     run.caveats = camera_caveats + run.caveats
-    shells = clip_shells(pre, run, RUN_DEEP_DEPTH)
+    center = None
+    if args.ball_y is not None:  # canonical frame mirrors y for offense=right
+        center = FIELD_WIDTH - args.ball_y if args.offense == "right" else args.ball_y
+    shells = clip_shells(pre, run, args.run_deep, center=center)
     label, score = shell_change_label(
         shells["shown"]["n_deep"],
         shells["shown"]["mof_closed"],
@@ -203,6 +222,23 @@ def main() -> None:
             print(f"  ! {name}: {c}")
     proposed = f"{label or 'no rotation'} (score {score:.2f})"
     print(f"\nproposed: {proposed}")
+
+    # the model's variant call on the snap frame, kept apart from the structural reads
+    variant: list[tuple[str, float]] = []
+    if args.model.exists():
+        ranked = predict_proba(load_bundle(args.model), snapshot_features(pre.analysis)).iloc[0]
+        variant = [(str(k), float(v)) for k, v in ranked.sort_values(ascending=False).items()]
+    report = clip_report(
+        pre,
+        run,
+        args.run_deep,
+        variant,
+        label,
+        score,
+        f"frame #{run_i} ({samples[run_i].t:.1f}s of clip)",
+        center=center,
+    )
+    print("\n" + report.summary())
 
     annotate(paths[pre_i], pre, f"shown: {shells['shown']['shell']}", out_dir / "pre_analyzed.png")
     annotate(
@@ -233,6 +269,7 @@ def main() -> None:
         "shells": shells,
         "proposed": {"label": label, "score": score},
         "verdict": {"disguised": disguised, "mechanism": mechanism, "note": note},
+        "report": report.to_dict(),
         "caveats": {"pre": pre.caveats, "run": run.caveats},
         "camera": {"moved": cam.moved, "shift_px": cam.shift_px, "scale": cam.scale},
     }
