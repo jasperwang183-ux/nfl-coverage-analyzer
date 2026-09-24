@@ -57,9 +57,10 @@ def mof_is_closed(deep_offsets: np.ndarray) -> bool:
     if len(deep_offsets) == 0:
         return False
     o = np.sort(np.abs(deep_offsets))
+    eps = 0.05  # a player measured exactly on the band edge is on the band, not outside it
     if len(o) == 1:  # a lone deep player is the post player even when shaded off the ball
-        return bool(o[0] <= MOF_SINGLE_HALFWIDTH)
-    return bool(o[0] <= MOF_HALFWIDTH and o[1] >= MOF_PARTNER_MIN)
+        return bool(o[0] <= MOF_SINGLE_HALFWIDTH + eps)
+    return bool(o[0] <= MOF_HALFWIDTH + eps and o[1] >= MOF_PARTNER_MIN - eps)
 
 
 def _formation_center(offense_snap: pd.DataFrame) -> pd.Series:

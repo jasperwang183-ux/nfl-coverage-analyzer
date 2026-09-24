@@ -19,7 +19,13 @@ import cv2
 import numpy as np
 import pandas as pd
 
-from nfl_coverage.analysis.shell import shell_state
+from nfl_coverage.analysis.report import (
+    CoverageReport,
+    disguise_text,
+    structural_read,
+    variant_confidence,
+)
+from nfl_coverage.analysis.shell import DEEP_DEPTH, shell_state
 from nfl_coverage.config import FIELD_LENGTH
 from nfl_coverage.features.alignment import KEYS, _los_estimate
 from nfl_coverage.vision.detect import dedupe_mask, detect_people, foot_points, unclipped_mask
@@ -291,7 +297,20 @@ def analyze_image(
     return FrameAnalysis(frame, analysis, detections, status, caveats, vis, teams, line_center)
 
 
-def clip_shells(pre: FrameAnalysis, run: FrameAnalysis, run_deep_depth: float) -> dict:
+def _center_of(pre: FrameAnalysis, center: float | None) -> float:
+    """Formation center (canonical y): given ball y, else the line players, else the QB."""
+    if center is not None:
+        return center
+    if pre.line_center_y is not None:
+        return pre.line_center_y
+    pre_off = pre.analysis[pre.analysis["side"] == "Offense"]
+    qb = pre_off[pre_off["position"] == "QB"]
+    return float(qb["y"].iloc[0]) if len(qb) else float(pre_off["y"].mean())
+
+
+def clip_shells(
+    pre: FrameAnalysis, run: FrameAnalysis, run_deep_depth: float, center: float | None = None
+) -> dict:
     """Shown shell from the pre-snap frame, run shell from the post-snap frame.
 
     The LOS and formation center come from the pre-snap frame and are imposed on
@@ -299,6 +318,7 @@ def clip_shells(pre: FrameAnalysis, run: FrameAnalysis, run_deep_depth: float) -
     canonical rel_frame-0 frames with the same dummy play key.
     """
     pre_off = pre.analysis[pre.analysis["side"] == "Offense"]
+    center = _center_of(pre, center)
     if len(pre_off) == 0 or (pre.analysis["side"] == "Defense").sum() == 0:
         counts = dict(zip(*np.unique(pre.status, return_counts=True)))
         raise ValueError(
@@ -306,11 +326,6 @@ def clip_shells(pre: FrameAnalysis, run: FrameAnalysis, run_deep_depth: float) -
             f"(status counts: {counts}); check --imgsz, the calibration, and the annotated frame"
         )
     los = float(_los_estimate(pre_off).iloc[0])
-    qb = pre_off[pre_off["position"] == "QB"]
-    if pre.line_center_y is not None:
-        center = pre.line_center_y
-    else:
-        center = float(qb["y"].iloc[0]) if len(qb) else float(pre_off["y"].mean())
     shown = shell_state(pre.analysis, 0, los=los, center=center).iloc[0]
     played = shell_state(run.analysis, 0, deep_depth=run_deep_depth, los=los, center=center).iloc[0]
     return {
@@ -319,3 +334,35 @@ def clip_shells(pre: FrameAnalysis, run: FrameAnalysis, run_deep_depth: float) -
         "shown": shown.drop(KEYS).to_dict(),
         "run": played.drop(KEYS).to_dict(),
     }
+
+
+def clip_report(
+    pre: FrameAnalysis,
+    run: FrameAnalysis | None,
+    run_deep_depth: float,
+    variant: list[tuple[str, float]],
+    disguise_label: str,
+    disguise_score: float,
+    run_frame_name: str = "+2 s",
+    center: float | None = None,
+) -> CoverageReport:
+    """Structure + confidence + variant + disguise, in words, for a UI or the console."""
+    pre_off = pre.analysis[pre.analysis["side"] == "Offense"]
+    los = float(_los_estimate(pre_off).iloc[0])
+    center = _center_of(pre, center)
+    shown = structural_read(pre.analysis, los, center, DEEP_DEPTH, "snap", pre.caveats)
+    played = None
+    if run is not None:
+        played = structural_read(
+            run.analysis, los, center, run_deep_depth, run_frame_name, run.caveats
+        )
+    return CoverageReport(
+        shown=shown,
+        played=played,
+        variant=variant,
+        variant_confidence=variant_confidence(variant),
+        disguise_label=disguise_label,
+        disguise_score=disguise_score,
+        disguise_text=disguise_text(disguise_label, shown, played),
+        caveats=list(pre.caveats) + ([] if run is None else list(run.caveats)),
+    )
