@@ -1,4 +1,62 @@
-# Session Handoff — updated 2026-09-23
+# Session Handoff — updated 2026-09-24
+
+## Product path (confirmed 2026-09-24): upload an mp4, watch it, read the coverage under it
+
+The end product is a site: upload an mp4 -> the clip plays -> under it, the
+shown coverage, the played coverage, confidence, why, and what it was
+disguised as. Everything under the video is `analysis/report.CoverageReport`
+(`ingest_clip.py` already prints it and writes it to `result.json`):
+
+- **structure** (deep count, middle open/closed, corner technique) with its
+  own confidence from threshold margins + pipeline caveats — this is the
+  reliable read and the "why" (reasons in words);
+- **family** the structure implies (Cover 2/4/6 vs 1/3 vs 0);
+- **variant** = the model's probabilities, with their honest lower confidence;
+- **disguise** verdict in words (shown vs played, mechanism).
+
+Server-side pipeline for one upload = what `scripts/` does today, in order:
+sample frames + contact sheet (`vision/clip.sample_frames`) -> the user picks
+the pre-snap frame and the snap time (or we detect the snap from motion; the
+contact-sheet motion score is the seed) -> auto-calibrate the pre-snap frame
+(`vision/fieldlines.auto_calibrate`; the user confirms which painted yard each
+line is — a two-click UI) -> track players from the snap (`vision/track.py`)
+-> canonical 10 Hz tracks -> disguise components + report. The video player
+shows the clip; the report renders below; the annotated frames / top-down
+render are the "why" visuals. Not built: the web layer itself (FastAPI +
+a page is enough: upload, a frame picker, a line-identity confirm, the
+report), snap detection, and the sequence model.
+
+## Player tracking (built 2026-09-24, `vision/track.py`, `scripts/track_clip.py`)
+
+YOLO + ByteTrack over the clip's native frames (identities persist), one frame
+kept per 0.1 s; the anchor calibration is chained frame to frame through
+consecutive homographies (small motion each step, keyframes re-anchor);
+sides are assigned once on the snap frame (color + geometry) and carried by
+track id; line players dropped; canonical schema at 10 Hz with speeds from
+finite differences. `shell_rotation` then runs on film exactly as on tracking
+data, naming the rotator, and `post_snap_features` (man-mirror fraction etc.)
+become available on film.
+
+**First runs vs analyst ground truth (clip 1 = Cover 4, clip 2 = man look
+disguising Cover 3) — the tracked reads do NOT yet match:**
+- clip 1: 22 tracks sided at the snap (10 off / 11 def), both safeties and
+  both corners tracked through +3.5 s; +2 s depths 14.6 / 13.4 / 12.6 with the
+  fourth corner at 11.9 and the near safety 3.4 yd off the ball -> the reader
+  says "3-deep, middle closed" (Cover 3) on a play that is quarters. Knife edge
+  on both thresholds; report confidence is low, correctly. The 2 corner bails
+  and man-mirror 0.31 are the quarters evidence a better rule would use.
+- clip 2 (tracks start at the +1 s freeze): the deep 49er (track 1, 14.9 yd)
+  is lost at rel_frame 15 when the camera zooms; re-identification by jersey
+  color against the snap-frame team reference (added) did not recover him, so
+  +3 s reads 2 deep instead of the 3 the throw-frame still finds.
+- The still path (ingest_clip.py, separately calibrated frames) reproduces both
+  calls; the tracking path is committed as a first slice for the movement
+  features and rotator evidence, not yet as the source of the played call.
+  Next: tracker tuning (BoT-SORT with appearance, lower conf on re-id), and a
+  quarters-vs-Cover-3 rule that uses the corners' bail and man-mirror, not
+  just the 3.5-yd middle band.
+
+
 
 ## Update 2026-09-23 (latest): first real clips — 49ers @ Rams (Melbourne, 2026 wk 1)
 
