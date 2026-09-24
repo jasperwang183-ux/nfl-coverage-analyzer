@@ -80,9 +80,15 @@ class FieldCalibration:
         return cls.from_points(raw["pixel_points"], raw["field_points"])
 
 
-def on_field(field_xy: np.ndarray, margin: float = 1.0) -> np.ndarray:
-    """Boolean mask of points inside the field boundary (plus a small margin)."""
+def on_field(
+    field_xy: np.ndarray, margin: float = 1.0, y_margin: float | None = None
+) -> np.ndarray:
+    """Boolean mask of points inside the field boundary (plus a small margin).
+
+    `y_margin` overrides the sideline tolerance: bench personnel stand with their
+    feet on the sideline paint (y within +-1 of 0 or 53.3), so a frame that shows
+    a sideline wants a *negative* y margin, i.e. feet at least half a yard inside.
+    """
     x, y = field_xy[:, 0], field_xy[:, 1]
-    return (
-        (x >= -margin) & (x <= FIELD_LENGTH + margin) & (y >= -margin) & (y <= FIELD_WIDTH + margin)
-    )
+    ym = margin if y_margin is None else y_margin
+    return (x >= -margin) & (x <= FIELD_LENGTH + margin) & (y >= -ym) & (y <= FIELD_WIDTH + ym)

@@ -117,6 +117,9 @@ def main() -> None:
     ap.add_argument("--no-log", action="store_true")
     ap.add_argument("--yolo", default="yolo11s.pt")
     ap.add_argument("--conf", type=float, default=0.3)
+    ap.add_argument(
+        "--imgsz", type=int, default=1280, help="YOLO inference size; 1920 for 2560-wide frames"
+    )
     ap.add_argument("--out-dir", type=Path, default=None)
     args = ap.parse_args()
 
@@ -170,10 +173,19 @@ def main() -> None:
         )
 
     print("\nanalyzing pre-snap frame...")
-    pre = analyze_image(paths[pre_i], calib, args.los, args.offense, args.yolo, args.conf)
+    pre = analyze_image(
+        paths[pre_i], calib, args.los, args.offense, args.yolo, args.conf, imgsz=args.imgsz
+    )
     print("analyzing post-snap frame...")
     run = analyze_image(
-        paths[run_i], run_calib, args.los, args.offense, args.yolo, args.conf, reference=pre.teams
+        paths[run_i],
+        run_calib,
+        args.los,
+        args.offense,
+        args.yolo,
+        args.conf,
+        reference=pre.teams,
+        imgsz=args.imgsz,
     )
     run.caveats = camera_caveats + run.caveats
     shells = clip_shells(pre, run, RUN_DEEP_DEPTH)

@@ -29,12 +29,21 @@ def test_two_teams_cluster_cleanly():
     assert labels[0] != labels[5]
 
 
-def test_referee_is_color_outlier():
-    # gray stripes: mid-L, far from both a red and a white jersey center
+def test_flat_gray_is_a_lighting_variant_of_white_not_an_outlier():
+    # a flat mid-gray torso is what a shaded white jersey looks like in hard sun;
+    # officials are caught by their stripes (referee_mask), not by grayness
     img, boxes = _image_with_boxes([RED] * 5 + [WHITE] * 5 + [(120, 120, 120)])
     labels, is_player = cluster_teams(torso_colors(img, boxes))
-    assert is_player[:10].all()
-    assert not is_player[10]
+    assert is_player.all()
+    assert labels[10] == labels[5]
+
+
+def test_lone_extreme_outlier_does_not_hijack_the_split():
+    # a bright magenta UI element among two real teams must not become a "team"
+    img, boxes = _image_with_boxes([RED] * 5 + [WHITE] * 5 + [(255, 0, 255)])
+    labels, is_player = cluster_teams(torso_colors(img, boxes))
+    assert is_player[:10].all() and not is_player[10]
+    assert labels[0] != labels[5]
 
 
 def test_sides_majority_vote_overrides_stragglers():

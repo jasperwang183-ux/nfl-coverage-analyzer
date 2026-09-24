@@ -34,6 +34,8 @@ from nfl_coverage.vision.teams import (
 )
 from nfl_coverage.vision.visibility import check_visibility, defender_count_warnings
 
+SIDELINE_Y_MARGIN = -0.5  # bench feet sit on the paint: keep only bodies half a yard inside
+
 
 @dataclass
 class SampledFrame:
@@ -223,6 +225,7 @@ class FrameAnalysis:
     caveats: list[str] = field(default_factory=list)
     visibility: object = None
     teams: TeamColors | None = None  # learned here (pre-snap) or inherited (post-snap)
+    line_center_y: float | None = None  # canonical y of the ball, from the line players
 
 
 def analyze_image(
@@ -233,6 +236,7 @@ def analyze_image(
     yolo: str = "yolo11s.pt",
     conf: float = 0.3,
     reference: TeamColors | None = None,
+    imgsz: int = 1280,
 ) -> FrameAnalysis:
     """The still pipeline (scripts/analyze_still.py) as a function, no model call.
 
@@ -245,8 +249,8 @@ def analyze_image(
         raise ValueError(f"could not read {image_path}")
     vis = check_visibility(calib, img.shape, los, offense)
 
-    detections = detect_people(image_path, yolo, conf)
-    keep = on_field(calib.to_field(foot_points(detections)))
+    detections = detect_people(image_path, yolo, conf, imgsz=imgsz)
+    keep = on_field(calib.to_field(foot_points(detections)), y_margin=SIDELINE_Y_MARGIN)
     detections = [d for d, k in zip(detections, keep) if k]
     field_xy = calib.to_field(foot_points(detections))
     unique = dedupe_mask(field_xy, [d.conf for d in detections])
@@ -278,7 +282,10 @@ def analyze_image(
     analysis = frame[~line.to_numpy()]
     n_def = int((analysis["side"] == "Defense").sum())
     caveats = list(vis.warnings) + defender_count_warnings(n_def)
-    return FrameAnalysis(frame, analysis, detections, status, caveats, vis, teams)
+    # the ball sits in the middle of the two lines: a better formation center
+    # than the deepest offensive player, who on film is often an offset back
+    line_center = float(frame.loc[line.to_numpy(), "y"].median()) if line.sum() >= 3 else None
+    return FrameAnalysis(frame, analysis, detections, status, caveats, vis, teams, line_center)
 
 
 def clip_shells(pre: FrameAnalysis, run: FrameAnalysis, run_deep_depth: float) -> dict:
@@ -289,10 +296,19 @@ def clip_shells(pre: FrameAnalysis, run: FrameAnalysis, run_deep_depth: float) -
     canonical rel_frame-0 frames with the same dummy play key.
     """
     pre_off = pre.analysis[pre.analysis["side"] == "Offense"]
+    if len(pre_off) == 0 or (pre.analysis["side"] == "Defense").sum() == 0:
+        counts = dict(zip(*np.unique(pre.status, return_counts=True)))
+        raise ValueError(
+            "pre-snap frame has no usable offense/defense after filtering "
+            f"(status counts: {counts}); check --imgsz, the calibration, and the annotated frame"
+        )
     los = float(_los_estimate(pre_off).iloc[0])
     qb = pre_off[pre_off["position"] == "QB"]
-    center = float(qb["y"].iloc[0]) if len(qb) else float(pre_off["y"].mean())
-    shown = shell_state(pre.analysis, 0).iloc[0]
+    if pre.line_center_y is not None:
+        center = pre.line_center_y
+    else:
+        center = float(qb["y"].iloc[0]) if len(qb) else float(pre_off["y"].mean())
+    shown = shell_state(pre.analysis, 0, los=los, center=center).iloc[0]
     played = shell_state(run.analysis, 0, deep_depth=run_deep_depth, los=los, center=center).iloc[0]
     return {
         "los": los,

@@ -69,6 +69,7 @@ def main() -> None:
     ap.add_argument("--model", type=Path, default=MODELS_DIR / "still_shown.joblib")
     ap.add_argument("--yolo", default="yolo11s.pt")
     ap.add_argument("--conf", type=float, default=0.3)
+    ap.add_argument("--imgsz", type=int, default=1280, help="YOLO inference size")
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument(
         "--no-review", action="store_true", help="skip the QA prompt (accepts the model's call)"
@@ -99,7 +100,7 @@ def main() -> None:
     if not vis.ok and args.strict:
         raise SystemExit("refusing to call coverage on a partial view (drop --strict to caveat)")
 
-    detections = detect_people(args.image, args.yolo, args.conf)
+    detections = detect_people(args.image, args.yolo, args.conf, imgsz=args.imgsz)
     keep = on_field(calib.to_field(foot_points(detections)))
     detections = [d for d, k in zip(detections, keep) if k]
     field_xy = calib.to_field(foot_points(detections))
