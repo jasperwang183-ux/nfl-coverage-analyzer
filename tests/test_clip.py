@@ -127,3 +127,10 @@ def test_transfer_calibration_follows_a_pan_and_zoom():
     pa = np.float32([[300.0, 200.0]])
     pb = cv2.perspectiveTransform(pa.reshape(-1, 1, 2), H).reshape(-1, 2)
     assert np.allclose(t.calibration.to_field(pb), calib_a.to_field(pa), atol=0.5)
+
+
+def test_bottom_clipped_boxes_are_dropped():
+    from nfl_coverage.vision.detect import Detection, unclipped_mask
+
+    dets = [Detection((10, 10, 40, 100), 0.9), Detection((50, 900, 80, 1070), 0.9)]
+    assert unclipped_mask(dets, 1072).tolist() == [True, False]

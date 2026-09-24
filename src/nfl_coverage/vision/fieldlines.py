@@ -239,6 +239,10 @@ def number_edges(
     if len(ys_white) < 10:
         return None
     top, bottom = ys_white[0], ys_white[-1]
+    # a digit is 2 yd tall: reject a box that grabbed a player, logo or stray paint
+    expected = abs(px[1, 1] - px[0, 1]) * (2.0 / 4.0)  # probe spans 4 yd around the digit
+    if not 0.7 * expected <= (bottom - top) <= 1.4 * expected:
+        return None
     for y_px, y_field in ((top, rows[0]), (bottom, rows[1])):
         out.append(((line.x_at(y_px), float(y_px)), (x_field, y_field)))
     return out

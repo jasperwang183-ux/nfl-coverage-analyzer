@@ -46,6 +46,16 @@ def detect_people(
     return [Detection(tuple(xyxy), c) for xyxy, c in zip(boxes.xyxy.tolist(), boxes.conf.tolist())]
 
 
+def unclipped_mask(detections: list[Detection], image_height: int, edge_px: int = 4) -> np.ndarray:
+    """False where a box is cut off by the bottom of the image.
+
+    A body clipped by the bottom edge has no visible feet, so its foot point is
+    wherever the frame ends and its field position is meaningless (a screen
+    capture's player bar, a bench crowd cropped at the bottom).
+    """
+    return np.array([d.box[3] < image_height - edge_px for d in detections], dtype=bool)
+
+
 def foot_points(detections: list[Detection]) -> np.ndarray:
     """(N, 2) array of foot-point pixels."""
     return np.array([d.foot_point for d in detections], dtype=np.float32).reshape(-1, 2)

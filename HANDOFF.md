@@ -1,5 +1,55 @@
 # Session Handoff — updated 2026-09-23
 
+## Update 2026-09-23 (latest): first real clips — 49ers @ Rams (Melbourne, 2026 wk 1)
+
+Two screen-captured all-22 clips from a film breakdown video (`data/clips/sf-lar/`,
+gitignored). Both are paused-then-played sequences: clip 1 holds the pre-snap
+look for 5.5 s then plays (49ers offense, moving left, LOS x=49.9); clip 2
+shows the motion first, freezes ~1 s post-snap with telestrator circles, then
+resumes at 16.5 s (Rams offense, LOS x=69.9). The frame the analyst calls
+"pre-snap" must be chosen with that in mind (`--pre 10 --run 16` for clip 1,
+`--pre 16 --run 35` for clip 2).
+
+What the film forced, all committed:
+- **Detection size**: YOLO at 640 found 17 of 22 players on a 2560-wide frame;
+  `--imgsz 1920` finds all (default now 1280).
+- **Auto-calibration from the markings** (`vision/fieldlines.py`,
+  `scripts/calibrate_auto.py`): yard lines refit on their pixels, hash rows by
+  RANSAC on tick blobs, sideline band edges, number-glyph edges predicted by a
+  first pass. 0.14–0.23 yd on 14–20 landmarks per frame, no clicking; the
+  analyst passes the painted yard of each detected line (`--yards`). Probe
+  first without `--yards`; lower `--min-length/--votes` on zoomed-out frames.
+  Number edges self-validate when nothing else constrains the near side
+  (clip 2 frame 16 had a bad near fit until a glyph-height check was added) —
+  prefer a visible sideline. Calibration *transfer* through the frame
+  homography works for small pans but not a 0.73x zoom-out (33 inliers,
+  wrong): fit the second frame directly.
+- **Jerseys in hard sun**: every torso splits into a lit and a shaded mode;
+  the per-channel median of a blue-and-yellow Rams torso is a gray that is
+  nobody's color. Descriptor is now both modes (dark, bright) with L weighted
+  0.1; officials by *vertical* stripe alternation across torso columns
+  (≥ 5 switches); a lone outlier can no longer hijack the 2-means split; the
+  contested ±2.5 yd band decides by nearest side-centroid of the geometrically
+  certain players, not by cluster vote. Bench feet sit on the sideline paint
+  (on-field now needs y ≥ 0.5) and bodies clipped by the frame bottom have no
+  feet (dropped).
+- **Middle-of-field center on stills** = median y of the line players (the
+  deepest offensive player on film is often an offset back).
+
+Results (pre → +2 s, both frames calibrated separately):
+- clip 1: **2-high MOF-open → 2-high MOF-open, no rotation**; the post-snap
+  frame has only 4 coverage defenders in view (camera follows the play).
+- clip 2: **2-high MOF-closed → 2-high MOF-open, `rotate_to_mof_open`** — a
+  deep safety over the ball at the snap spins out to a half. Pre-snap frame
+  still counts 13 "defenders": two Rams receivers on the far side inside the
+  LOS band read as defense (gray-dominant crops) — the residual color error.
+
+Known weak spot: color on small/shaded crops. Next step if it keeps biting: a
+chroma-histogram descriptor per torso (mass in blue / yellow / red / neutral
+bins) matched to team histograms learned on the pre-snap frame, instead of two
+modes. The analyst-confirmation prompts (`ingest_clip.py` without `--yes`) are
+untested on these clips; every run so far used `--yes --no-log`.
+
 ## Update 2026-09-23 (later): disguise harness, shell reader, clip ingester
 
 Methodology and calibration table: `docs/DISGUISE_PLAN.md`. Decisions that

@@ -91,3 +91,21 @@ def test_shaded_white_jersey_is_not_a_referee_and_clusters_with_lit_one():
     labels, is_player = cluster_teams(np.vstack([torso_colors(img, boxes)] * 2))
     assert is_player.all()
     assert labels[0] == labels[1] != labels[2]
+
+
+def test_contested_player_takes_the_side_that_looks_like_him():
+    # 4 white far on the defense side, 4 orange far on the offense side, and one
+    # orange body on the line whose color cluster is polluted with whites
+    from nfl_coverage.vision.teams import sides_from_clusters
+
+    img, boxes = _canvas(9)
+    for b in boxes[:4]:
+        _fill(img, b, WHITE)
+    for b in boxes[4:]:
+        _fill(img, b, ORANGE)
+    colors = torso_colors(img, boxes)
+    field_x = np.array([40, 41, 42, 43, 60, 61, 62, 63, 50.5], float)  # LOS at 50, offense right
+    labels = np.array([0, 0, 0, 0, 1, 1, 1, 1, 0])  # the lineman fell into the white cluster
+    sides = sides_from_clusters(labels, field_x, 50.0, "right", colors=colors)
+    assert sides[-1] == "Offense"
+    assert sides_from_clusters(labels, field_x, 50.0, "right")[-1] == "Defense"  # cluster vote
