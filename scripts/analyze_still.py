@@ -27,7 +27,7 @@ from nfl_coverage.analysis.review import REVIEWS_PATH, record_review, resolve_co
 from nfl_coverage.config import COVERAGE_CLASSES, MODELS_DIR
 from nfl_coverage.features.alignment import KEYS, snapshot_features
 from nfl_coverage.models.persist import load_bundle, predict_proba
-from nfl_coverage.vision.detect import dedupe_mask, detect_people, foot_points
+from nfl_coverage.vision.detect import dedupe_mask, detect_people, foot_points, unclipped_mask
 from nfl_coverage.vision.homography import FieldCalibration, on_field
 from nfl_coverage.vision.still import frame_from_points, line_player_mask
 from nfl_coverage.vision.teams import cluster_teams, referee_mask, sides_from_clusters, torso_colors
@@ -101,6 +101,7 @@ def main() -> None:
         raise SystemExit("refusing to call coverage on a partial view (drop --strict to caveat)")
 
     detections = detect_people(args.image, args.yolo, args.conf, imgsz=args.imgsz)
+    detections = [d for d, k in zip(detections, unclipped_mask(detections, img.shape[0])) if k]
     keep = on_field(calib.to_field(foot_points(detections)))
     detections = [d for d, k in zip(detections, keep) if k]
     field_xy = calib.to_field(foot_points(detections))
@@ -114,9 +115,12 @@ def main() -> None:
 
     # jersey-color team split; referees fall out as color outliers
     boxes = [d.box for d in detections]
-    labels, is_player = cluster_teams(torso_colors(img, boxes))
+    colors = torso_colors(img, boxes)
+    labels, is_player = cluster_teams(colors)
     is_player &= ~referee_mask(img, boxes)  # striped officials read as white otherwise
-    sides = sides_from_clusters(labels[is_player], field_xy[is_player, 0], args.los, args.offense)
+    sides = sides_from_clusters(
+        labels[is_player], field_xy[is_player, 0], args.los, args.offense, colors=colors[is_player]
+    )
     status = np.where(is_player, "", "Referee").astype(object)
     status[is_player] = sides
 

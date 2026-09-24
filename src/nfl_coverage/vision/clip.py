@@ -22,7 +22,7 @@ import pandas as pd
 from nfl_coverage.analysis.shell import shell_state
 from nfl_coverage.config import FIELD_LENGTH
 from nfl_coverage.features.alignment import KEYS, _los_estimate
-from nfl_coverage.vision.detect import dedupe_mask, detect_people, foot_points
+from nfl_coverage.vision.detect import dedupe_mask, detect_people, foot_points, unclipped_mask
 from nfl_coverage.vision.homography import FieldCalibration, on_field
 from nfl_coverage.vision.still import frame_from_points, line_player_mask
 from nfl_coverage.vision.teams import (
@@ -250,6 +250,7 @@ def analyze_image(
     vis = check_visibility(calib, img.shape, los, offense)
 
     detections = detect_people(image_path, yolo, conf, imgsz=imgsz)
+    detections = [d for d, k in zip(detections, unclipped_mask(detections, img.shape[0])) if k]
     keep = on_field(calib.to_field(foot_points(detections)), y_margin=SIDELINE_Y_MARGIN)
     detections = [d for d, k in zip(detections, keep) if k]
     field_xy = calib.to_field(foot_points(detections))
@@ -263,7 +264,9 @@ def analyze_image(
     if reference is None:
         labels, is_player = cluster_teams(colors)
         is_player &= ~striped
-        sides = sides_from_clusters(labels[is_player], field_xy[is_player, 0], los, offense)
+        sides = sides_from_clusters(
+            labels[is_player], field_xy[is_player, 0], los, offense, colors=colors[is_player]
+        )
         teams = TeamColors.from_frame(colors, labels, is_player, sides)
     else:
         all_sides, is_player = reference.assign(colors)

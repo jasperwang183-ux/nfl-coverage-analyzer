@@ -123,7 +123,12 @@ def cluster_teams(colors: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def sides_from_clusters(
-    labels: np.ndarray, field_x: np.ndarray, los: float, offense: str, band: float = 2.5
+    labels: np.ndarray,
+    field_x: np.ndarray,
+    los: float,
+    offense: str,
+    band: float = 2.5,
+    colors: np.ndarray | None = None,
 ) -> np.ndarray:
     """Per-player 'Offense'/'Defense': geometry where it is certain, color in between.
 
@@ -132,8 +137,9 @@ def sides_from_clusters(
     yards from the LOS take their geometric side outright (this also overrides a
     color misread, e.g. a washed-out deep safety clustering with white jerseys).
     Inside the band, where homography error can flip the geometric split, a
-    player takes the side of its color cluster, with each cluster's side voted
-    by its geometrically-certain members.
+    player takes the side whose *certain* players look most like him: with
+    `colors` (the per-player descriptors) that is the nearest of the two sides'
+    mean descriptors; without, the vote of his color cluster.
 
     field_x is each detection's field x in the same (unflipped) coordinates as
     `los`; `offense` is 'left' or 'right' — which side of the LOS the offense
@@ -144,11 +150,20 @@ def sides_from_clusters(
     on_off_side = field_x <= los if offense == "left" else field_x >= los
     sides = np.where(on_off_side, "Offense", "Defense").astype(object)
     certain = np.abs(field_x - los) >= band
+    contested = ~certain
+    if colors is not None and (certain & on_off_side).any() and (certain & ~on_off_side).any():
+        scaled = _scale(colors)
+        off_c = scaled[certain & on_off_side].mean(axis=0)
+        def_c = scaled[certain & ~on_off_side].mean(axis=0)
+        d_off = np.linalg.norm(scaled[contested] - off_c, axis=1)
+        d_def = np.linalg.norm(scaled[contested] - def_c, axis=1)
+        sides[contested] = np.where(d_off <= d_def, "Offense", "Defense")
+        return sides.astype(str)
     for k in (0, 1):
         members = labels == k
         voters = members & certain if (members & certain).any() else members
         cluster_side = "Offense" if on_off_side[voters].mean() > 0.5 else "Defense"
-        sides[members & ~certain] = cluster_side
+        sides[members & contested] = cluster_side
     return sides.astype(str)
 
 
