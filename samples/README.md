@@ -1,0 +1,43 @@
+# Sample clips
+
+Two screen-captured all-22 clips from a film breakdown of 49ers at Rams, Melbourne,
+2026 week 1, with the calibrations fitted on the frames used. They are the test
+cases for the film pipeline; the analyst's ground truth is:
+
+| clip | offense | shown | played | notes |
+|---|---|---|---|---|
+| `sf-lar/clip1.mp4` (14 s) | 49ers, LOS x=49.9, ball y=27.5 | two-high (Cover 4 look) | Cover 4 | paused pre-snap until 5.5 s, then plays; camera pans |
+| `sf-lar/clip2.mp4` (26 s) | Rams, LOS x=69.9, ball y=23.9 | single-high man look (Cover 1) | Cover 3 | motion plays 6-9 s, freeze with telestration ~1 s post-snap, playback resumes at 16.5 s |
+
+Both were captured from a YouTube film-study video; they are here as test fixtures
+for this project, not for redistribution.
+
+## Reproduce the reads
+
+```bash
+# clip 1: pre-snap frame 10 (5.0 s), post-snap frame 16 (8.0 s), each with its own calibration
+.venv\Scripts\python scripts\ingest_clip.py samples\sf-lar\clip1.mp4 \
+    --calib samples\sf-lar\calibrations\clip1_frame_010_05.00s.calibration.json \
+    --run-calib samples\sf-lar\calibrations\clip1_frame_016_08.00s.calibration.json \
+    --imgsz 1920 --los 49.9 --ball-y 27.5 --offense right --pre 10 --run 16 --yes --no-log
+
+# clip 2: pre-snap frame 16 (8.0 s), throw frame 39 (19.5 s), deep threshold 12 at the throw
+.venv\Scripts\python scripts\ingest_clip.py samples\sf-lar\clip2.mp4 \
+    --calib samples\sf-lar\calibrations\clip2_frame_016_08.00s.calibration.json \
+    --run-calib samples\sf-lar\calibrations\clip2_frame_039_19.50s.calibration.json \
+    --imgsz 1920 --los 69.9 --ball-y 23.9 --offense right --pre 16 --run 39 --run-deep 12 --yes --no-log
+
+# tracked reads (10 Hz canonical tracks, rotator named, movement features)
+.venv\Scripts\python scripts\track_clip.py samples\sf-lar\clip1.mp4 \
+    --calib samples\sf-lar\calibrations\clip1_frame_010_05.00s.calibration.json --anchor 5.0 \
+    --keyframe 8.0=samples\sf-lar\calibrations\clip1_frame_016_08.00s.calibration.json \
+    --start 5.0 --snap 5.5 --end 9.0 --los 49.9 --offense right --ball-y 27.5 --imgsz 1920
+.venv\Scripts\python scripts\track_clip.py samples\sf-lar\clip2.mp4 \
+    --calib samples\sf-lar\calibrations\clip2_frame_032_16.00s.calibration.json --anchor 16.0 \
+    --keyframe 17.5=samples\sf-lar\calibrations\clip2_frame_035_17.50s.calibration.json \
+    --keyframe 19.5=samples\sf-lar\calibrations\clip2_frame_039_19.50s.calibration.json \
+    --start 16.0 --snap 16.4 --end 20.0 --los 69.9 --offense right --ball-y 23.9 --imgsz 1920
+```
+
+The calibrations were fitted with `scripts/calibrate_auto.py` from the painted markings
+(yard lines, hash rows, sideline, numbers); the line identities used are in HANDOFF.md.

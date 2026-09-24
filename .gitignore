@@ -43,3 +43,6 @@ CLAUDE.local.md
 Thumbs.db
 .vscode/
 .idea/
+
+# sample clips are tracked test fixtures (see samples/README.md)
+!samples/**/*.mp4

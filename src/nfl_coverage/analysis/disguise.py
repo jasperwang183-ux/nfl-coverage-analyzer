@@ -57,6 +57,7 @@ def shell_rotation(
     run_frame: int = RUN_FRAME,
     run_deep_depth: float = RUN_DEEP_DEPTH,
     center: float | None = None,
+    los: float | None = None,
 ) -> pd.DataFrame:
     """Shell at the snap vs. shell at +1.5 s; the most common disguise.
 
@@ -67,14 +68,14 @@ def shell_rotation(
     ROTATION_SCORES order; the score is that label's weight.
     """
     run_frames = _run_frame_per_play(frames, run_frame)
-    shown = shell_state(frames, 0, center=center).set_index(KEYS)
+    shown = shell_state(frames, 0, center=center, los=los).set_index(KEYS)
     run = _at_run_frame(
-        frames, run_frames, shell_state, deep_depth=run_deep_depth, center=center
+        frames, run_frames, shell_state, deep_depth=run_deep_depth, center=center, los=los
     ).set_index(KEYS)
 
-    d0 = deep_defenders(frames, 0, center=center).set_index(KEYS + ["nfl_id"])
+    d0 = deep_defenders(frames, 0, center=center, los=los).set_index(KEYS + ["nfl_id"])
     d1 = _at_run_frame(
-        frames, run_frames, deep_defenders, deep_depth=run_deep_depth, center=center
+        frames, run_frames, deep_defenders, deep_depth=run_deep_depth, center=center, los=los
     ).set_index(KEYS + ["nfl_id"])
     both = d0[["depth", "deep", "widest"]].join(
         d1[["depth", "deep"]].rename(columns={"depth": "depth1", "deep": "deep1"}), how="inner"
@@ -108,10 +109,11 @@ def shell_rotation(
         out["shown_mof_closed"] != out["run_mof_closed"]
     )
     moved = out["max_move"] >= ROTATION_MIN_MOVE
+    few = out["run_n_deep"] <= 3  # with four deep the middle is shared: no MOF verdict to flip
     label = np.select(
         [
-            changed & moved & ~out["shown_mof_closed"] & out["run_mof_closed"],
-            changed & moved & out["shown_mof_closed"] & ~out["run_mof_closed"],
+            changed & moved & few & ~out["shown_mof_closed"] & out["run_mof_closed"],
+            changed & moved & few & out["shown_mof_closed"] & ~out["run_mof_closed"],
             changed & (out["n_came_down"] > 0),
             changed & (out["n_bailed_inside"] > 0),
             changed & (out["n_corner_bail"] > 0),
@@ -134,6 +136,36 @@ def shell_rotation(
     out["shell_rotation_score"] = np.where(unreadable, np.nan, score)
     out["shell_rotation_label"] = np.where(unreadable, "insufficient_frames", label)
     return out.reset_index()
+
+
+def declared_frame(
+    frames: pd.DataFrame,
+    run_frame: int = RUN_FRAME,
+    deep_depth: float = RUN_DEEP_DEPTH,
+    min_defenders: int = 5,
+    center: float | None = None,
+    los: float | None = None,
+) -> int:
+    """The rel_frame at which the played shell has declared: most deep defenders.
+
+    Coverage responsibilities appear over a window, not at an instant — a corner
+    bailing to a third crosses the deep line later than a safety who was already
+    there. Among frames from `run_frame` to the end that still carry at least
+    `min_defenders` tracked defenders (tracks get lost as the camera zooms),
+    take the one with the most defenders past `deep_depth`; ties go to the
+    earliest. Film reads use this; the tracking-data harness keeps the fixed
+    2.0 s read it was calibrated on.
+    """
+    last = int(frames["rel_frame"].max())
+    best_rf, best_n = run_frame, -1
+    for rf in range(min(run_frame, last), last + 1):
+        d = deep_defenders(frames, rf, deep_depth=deep_depth, center=center, los=los)
+        if len(d) < min_defenders:
+            continue
+        n = int(d["deep"].sum())
+        if n > best_n:
+            best_rf, best_n = rf, n
+    return best_rf
 
 
 def shell_change_label(

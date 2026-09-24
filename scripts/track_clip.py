@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-from nfl_coverage.analysis.disguise import RUN_FRAME, shell_rotation
+from nfl_coverage.analysis.disguise import RUN_FRAME, declared_frame, shell_rotation
 from nfl_coverage.analysis.report import structural_read
 from nfl_coverage.analysis.viz import render_play
 from nfl_coverage.config import FIELD_WIDTH, ROOT
@@ -91,11 +91,15 @@ def main() -> None:
 
     center = None
     if args.ball_y is not None:
-        center = FIELD_WIDTH - args.ball_y if args.offense == "right" else args.ball_y
+        ball_c = FIELD_WIDTH - args.ball_y if args.offense == "right" else args.ball_y
+        # a post safety on a hash-mark ball sits between the ball and the field's middle
+        center = (ball_c + FIELD_WIDTH / 2) / 2
     los_c = (120 - args.los) if args.offense == "right" else args.los
 
+    declared = declared_frame(tracks, RUN_FRAME, args.run_deep, center=center, los=los_c)
+    print(f"\nplayed shell declares at rel_frame {declared} (+{declared * args.step:.1f} s)")
     rot = shell_rotation(
-        tracks, run_frame=RUN_FRAME, run_deep_depth=args.run_deep, center=center
+        tracks, run_frame=declared, run_deep_depth=args.run_deep, center=center, los=los_c
     ).iloc[0]
     print(
         f"\nshell_rotation: {rot['shown_shell']} -> {rot['run_shell']} at rel_frame {rot['run_frame']:.0f}: "
