@@ -42,6 +42,8 @@ def shell_label(n_deep: int, mof_closed: bool) -> str:
     """Human shell name, e.g. '2-high MOF-open' (Cover 2/4/6 look), '1-high MOF-closed'."""
     if n_deep == 0:
         return "0-high"
+    if n_deep >= 4:
+        return "4-deep"  # quarters: no post player to speak of, the middle is shared
     deep = f"{n_deep}-high" if n_deep <= 2 else "3-deep"
     return f"{deep} {'MOF-closed' if mof_closed else 'MOF-open'}"
 

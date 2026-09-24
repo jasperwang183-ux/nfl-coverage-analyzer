@@ -1,5 +1,33 @@
 # Session Handoff — updated 2026-09-24
 
+## Next session (agreed 2026-09-24), in order
+
+1. **The web page.** FastAPI + one page: upload an mp4 -> sampled frames and
+   contact sheet -> the user picks the pre-snap frame and the snap time ->
+   auto-calibration on that frame with a confirm step for which painted yard
+   each detected line is (`calibrate_auto.py` logic; show the landmark
+   overlay) -> track -> `CoverageReport` rendered under the playing video
+   (structure + confidence + reasons, family, variant, disguise) with the
+   annotated frames and the top-down render as the "why". `ingest_clip.py`
+   and `track_clip.py` are the server-side sequence; `result.json` is the
+   contract for the page.
+2. **Snap detection.** The contact-sheet motion score already spikes at the
+   snap on both sample clips (0 -> 6-16); a first cut is "first sustained
+   motion after a still stretch", refined by the line players' first movement
+   once tracks exist. Replaces the manual `--snap`.
+3. **Tracker tuning.** Track loss at zooms (clip 2's deep 49er at rel 15);
+   try BoT-SORT with appearance re-id, lower confidence for continuation, and
+   feed the re-identified ids the same team reference. Then the chained
+   calibration can be re-anchored automatically by re-running
+   `auto_calibrate` on a frame whenever the camera check trips.
+4. **Sequence model.** Two heads on one spatio-temporal transformer (set
+   attention across players per frame, temporal transformer over frames),
+   trained on the 33K tracking plays; evaluated on the film-confirmed clips in
+   `disguise_labels.jsonl`. This is what gets past the 50% variant ceiling.
+
+Sample clips with calibrations are tracked in `samples/sf-lar/` (see its README
+for the exact commands that reproduce every number below).
+
 ## Product path (confirmed 2026-09-24): upload an mp4, watch it, read the coverage under it
 
 The end product is a site: upload an mp4 -> the clip plays -> under it, the
@@ -37,8 +65,21 @@ finite differences. `shell_rotation` then runs on film exactly as on tracking
 data, naming the rotator, and `post_snap_features` (man-mirror fraction etc.)
 become available on film.
 
+**Declared read (added after the first runs):** the played shell is taken at
+the frame from +2 s on with the most deep defenders (min 5 tracked), not at a
+fixed instant — a corner bailing to a third crosses the deep line later than a
+safety already there. Both reads now use the known LOS (a 0.3 yd LOS estimate
+difference flipped a corner at 11.9 vs 12.0 yd), a 4-deep label/family exists
+(quarters: no MOF verdict), and on film the middle-of-field center is the
+midpoint of the ball and the field middle (a post safety on a hash-mark ball
+sits between them). With that, **clip 1 tracked = shown 2-high open -> played
+4-deep, Cover 4, corner bails only (score 0.25): matches the analyst.** Clip 2
+tracked declares 3 deep at rel_frame 21 (`rotation_up`, one non-corner bailed
+deep) — the Cover 3 structure — with the middle verdict still sensitive to the
+center; the throw-frame still remains the clean Cover 3 read.
+
 **First runs vs analyst ground truth (clip 1 = Cover 4, clip 2 = man look
-disguising Cover 3) — the tracked reads do NOT yet match:**
+disguising Cover 3) — before the declared read the tracked reads did NOT match:**
 - clip 1: 22 tracks sided at the snap (10 off / 11 def), both safeties and
   both corners tracked through +3.5 s; +2 s depths 14.6 / 13.4 / 12.6 with the
   fourth corner at 11.9 and the near safety 3.4 yd off the ball -> the reader

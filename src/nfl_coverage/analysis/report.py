@@ -42,6 +42,8 @@ FAMILY = {
     (2, True): "post safety plus a deep half (rotated two-high)",
     (3, True): "Cover 3 (three deep, middle closed)",
     (3, False): "three deep, middle open (quarters/halves rotation)",
+    (4, True): "Cover 4 (four deep, quarters)",
+    (4, False): "Cover 4 (four deep, quarters)",
 }
 
 
@@ -145,7 +147,7 @@ def structural_read(
             f"widest defenders at {low['depth']:.1f} and {high['depth']:.1f} yd "
             f"({'press' if pressed(low) else 'off'} / {'press' if pressed(high) else 'off'})"
         )
-    fam = FAMILY.get((min(n_deep, 3), bool(mof_closed)), shell_label(n_deep, bool(mof_closed)))
+    fam = FAMILY.get((min(n_deep, 4), bool(mof_closed)), shell_label(n_deep, bool(mof_closed)))
     return StructuralRead(
         frame=frame,
         n_deep=n_deep,
