@@ -26,14 +26,21 @@ class Detection:
         return ((x1 + x2) / 2.0, y2)
 
 
+DEFAULT_IMGSZ = 1280  # the YOLO default of 640 loses far-side players on a 1080p+ all-22 frame
+
+
 def detect_people(
-    image_path: Path, model_name: str = "yolo11s.pt", conf: float = 0.3
+    image_path: Path, model_name: str = "yolo11s.pt", conf: float = 0.3, imgsz: int = DEFAULT_IMGSZ
 ) -> list[Detection]:
-    """Run pretrained YOLO on an image; returns person detections."""
+    """Run pretrained YOLO on an image; returns person detections.
+
+    `imgsz` is the inference resolution: 640 found 17 of 22 players on a 2560-wide
+    coaches-film frame, 1280 found 29 boxes, 1920 all of them (plus the crowd).
+    """
     from ultralytics import YOLO  # deferred: heavy import, and tests don't need it
 
     result = YOLO(model_name).predict(
-        str(image_path), conf=conf, classes=[PERSON_CLASS], verbose=False
+        str(image_path), conf=conf, classes=[PERSON_CLASS], imgsz=imgsz, verbose=False
     )[0]
     boxes = result.boxes
     return [Detection(tuple(xyxy), c) for xyxy, c in zip(boxes.xyxy.tolist(), boxes.conf.tolist())]
