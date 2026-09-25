@@ -11,10 +11,12 @@
    annotated frames and the top-down render as the "why". `ingest_clip.py`
    and `track_clip.py` are the server-side sequence; `result.json` is the
    contract for the page.
-2. **Snap detection.** The contact-sheet motion score already spikes at the
-   snap on both sample clips (0 -> 6-16); a first cut is "first sustained
-   motion after a still stretch", refined by the line players' first movement
-   once tracks exist. Replaces the manual `--snap`.
+2. **Snap detection - built 2026-09-24 (`vision/snap.py`, `scripts/detect_snap.py`),
+   not yet run on film.** See the section below. First thing next session:
+   run the two `detect_snap.py` commands in `samples/README.md` (clip 1 must
+   land at 5.5 s; clip 2's true snap is unknown, between 8.0 and 9.5 s) and
+   tune `BODY_DISP` / `FIRE_FRAC` on what the series shows. Blocked today by
+   Smart App Control refusing the unsigned `torch.dll` (see Environment notes).
 3. **Tracker tuning.** Track loss at zooms (clip 2's deep 49er at rel 15);
    try BoT-SORT with appearance re-id, lower confidence for continuation, and
    feed the re-identified ids the same team reference. Then the chained
@@ -27,6 +29,46 @@
 
 Sample clips with calibrations are tracked in `samples/sf-lar/` (see its README
 for the exact commands that reproduce every number below).
+
+## Snap detection (built 2026-09-24, `vision/snap.py`; untested on film)
+
+Decisions, agreed before building:
+- **Placement: after the homography, in field space.** Yards are camera-invariant
+  (a zoom changes pixel motion, a pan moves every pixel and no player). The
+  order is track -> chain calibration (anchored on *any* still frame of the
+  dwell, not the snap frame) -> `detect_snap` on unsided field positions ->
+  `assign_sides` at the detected frame -> canonical tracks. Sides and line ids
+  are assigned *at* the snap, so the detector cannot use either.
+- **Primary signal: the line firing, not the ball.** Five bodies still by rule
+  for >= 1 s then all moving in the same frame; a man in motion or a shift is
+  one or two bodies; detection jitter is independent per body. The defense is
+  excluded on purpose (their pre-snap movement is the disguise). The "line" is
+  every body in the LOS band (both lines straddle it: more bodies, same event).
+  The ball is a confirmation input (`ball_xy`) for when a detector exists: the
+  person-only YOLO does not see it and it is occluded under center anyway.
+- **Rule now, 1D CNN later, same interface.** No training set exists (2 clips;
+  2026 tracking starts at the snap; 2021 has the snap at frame 11 on every
+  play with 1 s of dwell and no film jitter). `snap_series` is the per-frame
+  feature table a learned model would consume; the web page's snap pick is the
+  labeling loop (log it against the detector's call, like `still_reviews`).
+
+How it works: per frame, the set line = bodies in the LOS band (given `--los`,
+or the densest 5-yd band of bodies) over the trailing 0.5 s; it *fires* when
+60% of them are > 0.5 yd from their window mean for 2 consecutive frames. The
+snap frame (rel_frame 0, the last still frame) is then placed by a
+flat-then-quadratic-ramp change-point fit per body over the two windows before
+the fire, median over bodies (a walking body is one outlier, not a bias).
+Confidence from bodies set / fraction fired / stillness before. 10 synthetic
+tests (`tests/test_snap.py`): jittered tracks, man in motion, a shifting TE,
+no fire, too few bodies, ball confirm/contradict. `track_clip.py --snap` is
+optional: absent, the detected frame is used; present, the offset is printed.
+
+Known limits to check on film: a breakdown video that resumes from a freeze
+1 s post-snap (clip 2 at 16.5 s) shows a line already in pass sets moving all
+at once - it is not the *first* fire if the window starts before the real
+snap, so start the window early. The pixel motion score cannot place clip 2's
+snap (the whole 5-9.4 s segment moves: man in motion + camera pan); that is
+the case the line signal exists for.
 
 ## Product path (confirmed 2026-09-24): upload an mp4, watch it, read the coverage under it
 
@@ -377,4 +419,12 @@ partial views degrade gracefully.
 
 - Windows + OneDrive venv: native-extension imports (scipy/sklearn) can transiently fail
   with an "Application Control policy" DLL error — retry once before debugging.
+- **2026-09-24 evening: not transient any more.** `import torch` fails every time with
+  `WinError 4551 ... torch\lib\torch.dll` and the Code Integrity log (event 3077) says the
+  DLL "did not meet the Enterprise signing level requirements"; the registry shows Smart
+  App Control enforcing (`HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy`,
+  `VerifiedAndReputablePolicyState = 1`). Torch worked earlier the same day, so the
+  policy most likely flipped from evaluation to on. Anything that loads YOLO is dead until
+  Smart App Control is turned off (Windows Security > App & browser control) - a user
+  decision, and it cannot be re-enabled without reinstalling Windows.
 - Ruff PostToolUse hook auto-formats `.py` on save; line length 100.
