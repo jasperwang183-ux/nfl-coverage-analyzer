@@ -3,6 +3,7 @@ data/raw/
 data/processed/
 data/stills/
 data/clips/
+data/web/
 *.csv
 *.parquet
 *.zip

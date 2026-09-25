@@ -219,6 +219,12 @@ def disguise_text(label: str, shown: StructuralRead, played: StructuralRead | No
         "rotation_down": f"a deep defender came down: showed {shown.family}, played {played.family}",
         "rotation_up": f"more deep than shown, corners or a slot bailed: showed {shown.family}, "
         f"played {played.family} (a man look that plays Cover 3 reads this way)",
+        "corner_bail": f"no disguise: corners bailed deep after the snap, the technique of "
+        f"the coverage shown, not a change of it (showed {shown.family}, played "
+        f"{played.family})",
+        "threshold_flicker": f"no disguise: the shell label changed only because a defender "
+        f"sits on the deep threshold; nobody moved 3 yd (showed {shown.family}, played "
+        f"{played.family})",
     }
     return texts.get(label, label)
 

@@ -26,6 +26,7 @@ Every vision stage must output the same canonical frame schema the tracking mode
 - `src/nfl_coverage/models/` — baseline sklearn → PyTorch sequence models
 - `src/nfl_coverage/vision/` — Phase 2 only: YOLO detection, OpenCV homography, tracking
 - `src/nfl_coverage/analysis/` — disguise detection, reporting, play visualization
+- `src/nfl_coverage/web/` — the page (FastAPI + one static page) over `vision/pipeline.py`; run with `scripts/serve.py`
 - `scripts/download_data.py` — Kaggle API download (rules must be accepted on kaggle.com first)
 
 ## Football domain conventions

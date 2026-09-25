@@ -1,16 +1,18 @@
 """Track a play through a clip and read it like tracking data: shown vs played, with evidence.
 
-Runs YOLO + ByteTrack over [--start, --end], chains the anchor calibration to
-every kept frame, finds the snap from the line firing (or takes --snap and
-reports how far the detector lands from it), reads the formation at the snap
-(LOS, offense side, ball y - each overridable by --los / --offense / --ball-y),
-assigns sides on the snap frame, writes canonical 10 Hz tracks, and then applies the disguise components exactly as on Big Data Bowl
-data: shell_rotation with the rotator named, structural reads at the snap and
-at +2 s, and the post-snap movement features.
+Runs YOLO + ByteTrack over [--start, --end] and chains the anchor calibration to
+every kept frame (saved under <out-dir>/tracked, so `--from-tracked` re-reads
+without re-tracking), then `vision.pipeline.read_tracked`: the snap from the
+line firing (or --snap), the formation at the snap (LOS, offense side, ball y -
+each overridable by --los / --offense / --ball-y), sides, canonical 10 Hz
+tracks, the shown and played structure, shell_rotation with the rotator named,
+the variant model and the coverage report. Writes tracks.parquet, the top-down
+render, the annotated snap frame and result.json (the web page's contract).
 
 Usage:
   python scripts/track_clip.py clip.mp4 --calib frame_010.calibration.json --anchor 5.0 \\
       --start 4.5 --end 9.0 --imgsz 1920
+  python scripts/track_clip.py clip.mp4 --from-tracked data/clips/clip_tracks/tracked --snap 5.6
 
 --start must precede the snap by at least the detector's still window (0.5 s).
 """
@@ -18,24 +20,21 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
-import numpy as np
+import cv2
 
-from nfl_coverage.analysis.disguise import RUN_FRAME, declared_frame, shell_rotation
-from nfl_coverage.analysis.report import structural_read
 from nfl_coverage.analysis.viz import render_play
-from nfl_coverage.config import FIELD_WIDTH, ROOT
-from nfl_coverage.features.movement import post_snap_features
-from nfl_coverage.vision.formation import infer_formation
+from nfl_coverage.config import MODELS_DIR, ROOT
 from nfl_coverage.vision.homography import FieldCalibration
-from nfl_coverage.vision.snap import detect_snap, field_positions
-from nfl_coverage.vision.track import (
-    assign_sides,
-    canonical_tracks,
-    chain_calibrations,
-    snap_bodies,
-    track_players,
+from nfl_coverage.vision.pipeline import (
+    RUN_DEEP_FILM,
+    ReadError,
+    TrackedClip,
+    annotate_snap,
+    read_tracked,
+    track_frames,
 )
 
 CLIPS_DIR = ROOT / "data" / "clips"
@@ -44,23 +43,23 @@ CLIPS_DIR = ROOT / "data" / "clips"
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("video", type=Path)
-    ap.add_argument("--calib", type=Path, required=True, help="calibration of the anchor frame")
-    ap.add_argument(
-        "--anchor", type=float, required=True, help="clip time (s) the calibration was fitted at"
-    )
+    ap.add_argument("--calib", type=Path, default=None, help="calibration of the anchor frame")
+    ap.add_argument("--anchor", type=float, default=None, help="clip time (s) it was fitted at")
     ap.add_argument("--keyframe", action="append", default=[], help="T=calib.json, extra anchors")
-    ap.add_argument("--start", type=float, required=True)
+    ap.add_argument("--start", type=float, default=None)
+    ap.add_argument("--end", type=float, default=None)
     ap.add_argument(
-        "--snap", type=float, default=None, help="clip time (s) of the snap; detected if absent"
+        "--from-tracked", type=Path, default=None, help="re-read a saved tracked clip (no YOLO)"
     )
-    ap.add_argument("--end", type=float, required=True)
+    ap.add_argument("--snap", type=float, default=None, help="snap time (s); detected if absent")
     ap.add_argument("--los", type=float, default=None, help="LOS field x; inferred if absent")
     ap.add_argument("--offense", choices=["left", "right"], default=None, help="inferred if absent")
     ap.add_argument("--ball-y", type=float, default=None, help="ball field y; inferred if absent")
     ap.add_argument("--step", type=float, default=0.1)
     ap.add_argument(
-        "--run-deep", type=float, default=12.0, help="post-snap deep threshold (yd) on film"
+        "--run-deep", type=float, default=RUN_DEEP_FILM, help="post-snap deep threshold (yd)"
     )
+    ap.add_argument("--model", type=Path, default=MODELS_DIR / "still_shown.joblib")
     ap.add_argument("--yolo", default="yolo11s.pt")
     ap.add_argument("--conf", type=float, default=0.3)
     ap.add_argument("--imgsz", type=int, default=1280)
@@ -69,146 +68,109 @@ def main() -> None:
     out_dir = args.out_dir or CLIPS_DIR / f"{args.video.stem}_tracks"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    frames = track_players(
-        args.video, args.start, args.end, args.step, args.yolo, args.conf, args.imgsz
-    )
-    times = np.array([f.t for f in frames])
-    anchor_i = int(np.argmin(np.abs(times - args.anchor)))
-    print(f"{len(frames)} frames at {args.step}s; anchor frame {anchor_i}")
-    keyframes = {}
-    for kf in args.keyframe:
-        t_s, path = kf.split("=", 1)
-        keyframes[int(np.argmin(np.abs(times - float(t_s))))] = FieldCalibration.load(path)
-    chain = chain_calibrations(frames, FieldCalibration.load(args.calib), anchor_i, keyframes)
-    for n in chain.notes:
-        print("  !", n)
+    if args.from_tracked is not None:
+        tracked_dir = args.from_tracked
+    else:
+        if None in (args.calib, args.anchor, args.start, args.end):
+            raise SystemExit("--calib, --anchor, --start and --end are needed to track")
+        keyframes = {}
+        for kf in args.keyframe:
+            t_s, path = kf.split("=", 1)
+            keyframes[float(t_s)] = FieldCalibration.load(path)
+        clip = track_frames(
+            args.video,
+            args.start,
+            args.end,
+            FieldCalibration.load(args.calib),
+            args.anchor,
+            keyframes,
+            args.step,
+            args.yolo,
+            args.conf,
+            args.imgsz,
+        )
+        tracked_dir = out_dir / "tracked"
+        clip.save(tracked_dir)
+        print(f"{len(clip.frames)} frames at {args.step}s tracked -> {tracked_dir}")
+        for n in clip.notes:
+            print("  !", n)
+    clip = TrackedClip.load(tracked_dir)  # every read runs from the saved frames
 
-    det = detect_snap(field_positions(frames, chain.calibrations), los=args.los, step_s=args.step)
+    bundle = None
+    if args.model.exists():
+        from nfl_coverage.models.persist import load_bundle
+
+        bundle = load_bundle(args.model)
+    try:
+        read = read_tracked(
+            clip, args.snap, args.los, args.offense, args.ball_y, args.run_deep, bundle
+        )
+    except ReadError as e:
+        raise SystemExit(str(e)) from e
+
+    det = read.snap
     if det.frame is None:
-        print(f"snap: not detected [{det.confidence}]: {'; '.join(det.reasons)}")
+        print(f"snap: not detected [{det.confidence}]")
     else:
         print(
-            f"snap: detected at frame {det.frame} ({det.t:.1f} s) [{det.confidence} confidence, "
-            f"score {det.score:.2f}]"
+            f"snap: detected at {det.t:.1f} s [{det.confidence} confidence, score {det.score:.2f}]"
         )
-        for r in det.reasons:
-            print("    -", r)
-    if args.snap is not None:
-        snap_i = int(np.argmin(np.abs(times - args.snap)))
-        if det.t is not None:
-            print(
-                f"    manual --snap {args.snap:.1f} s (frame {snap_i}): detector {det.t - args.snap:+.1f} s"
-            )
-        print(f"using the manual snap frame {snap_i}")
-    elif det.frame is not None:
-        snap_i = det.frame
-    else:
-        raise SystemExit("no snap: pass --snap, or start the window earlier than the snap")
-
-    bodies = snap_bodies(frames[snap_i], chain.calibrations[snap_i])
-    form = infer_formation(bodies.xy, bodies.labels, bodies.is_player)
-    print(
-        f"formation at the snap: offense {form.offense} [{form.offense_confidence}], "
-        f"LOS x={form.los:.1f} (range {form.los_range[0]:.1f}-{form.los_range[1]:.1f}) "
-        f"[{form.los_confidence}], ball y="
-        + (f"{form.ball_y:.1f} [{form.ball_y_confidence}]" if form.ball_y is not None else "?")
-    )
-    for r in form.reasons:
+    for r in det.reasons:
         print("    -", r)
-    for name, given, inferred in [
-        ("--offense", args.offense, form.offense),
-        ("--los", args.los, form.los),
-        ("--ball-y", args.ball_y, form.ball_y),
-    ]:
-        if given is None or inferred is None:
-            continue
-        if isinstance(given, str):
-            differs, shown = given != inferred, inferred
-        else:
-            differs, shown = abs(given - inferred) >= 0.5, f"{inferred:.1f}"
-        if differs:
-            print(f"    ! {name} {given} given; the formation read says {shown}")
-    offense = args.offense or form.offense
-    if offense is None:
-        raise SystemExit("offense side not readable from the formation: pass --offense")
-    los = args.los if args.los is not None else form.los
-    ball_y = args.ball_y if args.ball_y is not None else form.ball_y
+    print(f"using the {read.snap_source} snap at {read.snap_t:.1f} s (frame {read.snap_index})")
+    f = read.formation
     print(
-        f"using offense {offense}, LOS x={los:.1f}, ball y="
-        + (f"{ball_y:.1f}" if ball_y is not None else "none")
+        f"formation at the snap: offense {f.offense} [{f.offense_confidence}], "
+        f"LOS x={f.los:.1f} (range {f.los_range[0]:.1f}-{f.los_range[1]:.1f}) "
+        f"[{f.los_confidence}], ball y="
+        + (f"{f.ball_y:.1f} [{f.ball_y_confidence}]" if f.ball_y is not None else "?")
     )
-
-    sides = assign_sides(frames[snap_i], chain.calibrations[snap_i], los, offense, bodies)
-    n_off = sum(s == "Offense" for s in sides.side_by_id.values())
-    n_def = sum(s == "Defense" for s in sides.side_by_id.values())
+    for r in f.reasons:
+        print("    -", r)
+    for w in read.warnings:
+        print("    !", w)
     print(
-        f"snap frame: {n_off} offense, {n_def} defense tracks; {len(sides.line_ids)} on the line, "
-        f"{sides.n_referee} non-players, {sides.n_offfield} off-field"
+        f"using offense {read.offense}, LOS x={read.los:.1f}, ball y="
+        + (f"{read.ball_y:.1f}" if read.ball_y is not None else "none")
     )
-    tracks = canonical_tracks(frames, chain.calibrations, sides, snap_i, offense, args.step)
+    d = read.to_dict()
+    print(
+        f"snap frame: {d['sides']['offense']} offense, {d['sides']['defense']} defense tracks; "
+        f"{d['sides']['line']} on the line, {d['sides']['non_players']} non-players"
+    )
+    tracks = read.tracks
     tracks.to_parquet(out_dir / "tracks.parquet", index=False)
     print(
         f"canonical tracks: {tracks['nfl_id'].nunique()} players x rel_frame "
-        f"{tracks['rel_frame'].min()}..{tracks['rel_frame'].max()} -> {out_dir / 'tracks.parquet'}"
+        f"{tracks['rel_frame'].min()}..{tracks['rel_frame'].max()}"
     )
-
-    center = None
-    if ball_y is not None:
-        ball_c = FIELD_WIDTH - ball_y if offense == "right" else ball_y
-        # a post safety on a hash-mark ball sits between the ball and the field's middle
-        center = (ball_c + FIELD_WIDTH / 2) / 2
-    los_c = (120 - los) if offense == "right" else los
-
-    declared = declared_frame(tracks, RUN_FRAME, args.run_deep, center=center, los=los_c)
-    print(f"\nplayed shell declares at rel_frame {declared} (+{declared * args.step:.1f} s)")
-    rot = shell_rotation(
-        tracks, run_frame=declared, run_deep_depth=args.run_deep, center=center, los=los_c
-    ).iloc[0]
+    rot = read.rotation
     print(
-        f"\nshell_rotation: {rot['shown_shell']} -> {rot['run_shell']} at rel_frame {rot['run_frame']:.0f}: "
+        f"\nplayed shell declares at rel_frame {read.declared_frame} "
+        f"(+{read.declared_frame * clip.step:.1f} s)"
+    )
+    print(
+        f"shell_rotation: {rot['shown_shell']} -> {rot['run_shell']}: "
         f"{rot['shell_rotation_label'] or 'no rotation'} (score {rot['shell_rotation_score']:.2f}); "
         f"biggest mover track {rot['rotator_id']:.0f} moved {rot['rotator_dd']:+.1f} yd in depth; "
         f"{rot['n_came_down']:.0f} came down, {rot['n_bailed_inside']:.0f} bailed inside, "
         f"{rot['n_corner_bail']:.0f} corner bails"
     )
-    snap = tracks[tracks["rel_frame"] == 0]
-    read0 = structural_read(
-        snap,
-        los_c,
-        center if center is not None else snap.loc[snap["side"] == "Offense", "y"].mean(),
-        9.0,
-        "snap",
-        [],
-    )
-    print(f"SHOWN [{read0.confidence}]: {read0.shell} -> {read0.family}")
-    for r in read0.reasons:
-        print("    -", r)
-    rf = int(rot["run_frame"])
-    later = tracks[tracks["rel_frame"] == rf]
-    if len(later):
-        read1 = structural_read(
-            later,
-            los_c,
-            center if center is not None else snap.loc[snap["side"] == "Offense", "y"].mean(),
-            args.run_deep,
-            f"+{rf * args.step:.1f} s",
-            [],
-            rel_frame=rf,
-        )
-        print(f"PLAYED [{read1.confidence}]: {read1.shell} -> {read1.family}")
-        for r in read1.reasons:
-            print("    -", r)
-    feats = post_snap_features(tracks, horizon=rf).iloc[0]
+    print("\n" + read.report.summary())
     print("\npost-snap movement features:")
-    for k, v in feats.items():
-        if k.startswith("post_"):
-            print(f"    {k:<24} {v:.2f}")
+    for k, v in read.features.items():
+        print(f"    {k:<24} {v:.2f}")
+
     png = out_dir / "tracks.png"
-    tracks["dataset"] = "clip"
     render_play(
-        tracks.assign(coverage_type="?", man_zone="?"), str(png), note="tracked", mark_frame=rf
+        tracks.assign(dataset="clip", coverage_type="?", man_zone="?"),
+        str(png),
+        note="tracked",
+        mark_frame=read.declared_frame,
     )
-    print(f"\ntop-down render -> {png}")
+    cv2.imwrite(str(out_dir / "snap_annotated.jpg"), annotate_snap(clip, read))
+    (out_dir / "result.json").write_text(json.dumps(d, indent=2, allow_nan=False))
+    print(f"\ntop-down render, annotated snap frame, result.json -> {out_dir}")
 
 
 if __name__ == "__main__":
