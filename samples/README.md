@@ -6,8 +6,14 @@ cases for the film pipeline; the analyst's ground truth is:
 
 | clip | offense | shown | played | notes |
 |---|---|---|---|---|
-| `sf-lar/clip1.mp4` (14 s) | 49ers, LOS x=49.9, ball y=27.5 | two-high (Cover 4 look) | Cover 4 | paused pre-snap until 5.5 s, then plays; camera pans |
-| `sf-lar/clip2.mp4` (26 s) | Rams, LOS x=69.9, ball y=23.9 | single-high man look (Cover 1) | Cover 3 | motion plays 6-9 s, freeze with telestration ~1 s post-snap, playback resumes at 16.5 s |
+| `sf-lar/clip1.mp4` (14 s) | 49ers, LOS x=49.2, ball y=27.3 (ball visible under center; 49.9 was used before 2026-09-25) | two-high (Cover 4 look) | Cover 4 | paused pre-snap until 5.5 s, then plays; camera pans |
+| `sf-lar/clip2.mp4` (26 s) | Rams, LOS x=70.0-70.5 (center's hand; the ball is hidden), ball y=23.9 | single-high man look (Cover 1) | Cover 3 | motion plays 6-9 s, freeze with telestration ~1 s post-snap, playback resumes at 16.5 s |
+
+The still-path commands below keep the values the recorded reads were made with
+(clip 1 LOS 49.9, which is 0.7 yd too far toward the offense: it matches the
+painted 40 next to the ball, not the ball). The tracked clip 1 command infers
+the LOS, offense side and ball y from the snap frame instead
+(`vision/formation.py`).
 
 Both were captured from a YouTube film-study video; they are here as test fixtures
 for this project, not for redistribution.
@@ -36,12 +42,14 @@ for this project, not for redistribution.
     --calib samples\sf-lar\calibrations\clip2_frame_016_08.00s.calibration.json --anchor 8.0 \
     --start 6.0 --end 9.6 --los 69.9 --imgsz 1920
 
-# tracked reads (10 Hz canonical tracks, rotator named, movement features);
-# --snap is optional now: without it the detector's frame is used, with it the offset is printed
+# tracked reads (10 Hz canonical tracks, rotator named, movement features).
+# clip 1 is fully automatic: snap detected (5.5 s); LOS 49.0, offense right, ball y 26.1
+# inferred -> shown 2-high open, played 4-deep Cover 4 (fourth deep defender at 12.1 yd)
 .venv\Scripts\python scripts\track_clip.py samples\sf-lar\clip1.mp4 \
     --calib samples\sf-lar\calibrations\clip1_frame_010_05.00s.calibration.json --anchor 5.0 \
     --keyframe 8.0=samples\sf-lar\calibrations\clip1_frame_016_08.00s.calibration.json \
-    --start 5.0 --snap 5.5 --end 9.0 --los 49.9 --offense right --ball-y 27.5 --imgsz 1920
+    --start 4.5 --end 9.0 --imgsz 1920
+# clip 2's tracking starts after the freeze, past the snap: snap and formation are given
 .venv\Scripts\python scripts\track_clip.py samples\sf-lar\clip2.mp4 \
     --calib samples\sf-lar\calibrations\clip2_frame_032_16.00s.calibration.json --anchor 16.0 \
     --keyframe 17.5=samples\sf-lar\calibrations\clip2_frame_035_17.50s.calibration.json \
