@@ -142,22 +142,20 @@ def chain_calibrations(
 
 
 @dataclass
-class SideAssignment:
-    side_by_id: dict[int, str]
-    line_ids: set[int]
-    n_referee: int
+class SnapBodies:
+    """Every tracked, unclipped, on-field body on the snap frame, with its jersey color."""
+
+    ids: np.ndarray
+    boxes: np.ndarray
+    xy: np.ndarray  # field coordinates (raw)
+    colors: np.ndarray
+    labels: np.ndarray  # 2-means jersey-color cluster
+    is_player: np.ndarray  # False for officials (striped) and color outliers
     n_offfield: int
-    teams: TeamColors | None = None  # snap-frame team colors, to side ids that appear later
 
 
-def assign_sides(
-    frame: TrackedFrame, calib: FieldCalibration, los: float, offense: str
-) -> SideAssignment:
-    """Side per track id from the snap frame: color clusters voted by formation geometry.
-
-    Also names the line players (dropped downstream so the population matches
-    the coverage-only training data) using the same LOS-band rule as stills.
-    """
+def snap_bodies(frame: TrackedFrame, calib: FieldCalibration) -> SnapBodies:
+    """The snap frame's bodies in field space with team colors: input to sides and formation."""
     keep = unclipped_mask_boxes(frame.boxes, frame.image.shape[0]) & (frame.ids >= 0)
     boxes = frame.boxes[keep]
     ids = frame.ids[keep]
@@ -168,20 +166,45 @@ def assign_sides(
     colors = torso_colors(frame.image, [tuple(b) for b in boxes])
     labels, is_player = cluster_teams(colors)
     is_player &= ~referee_mask(frame.image, [tuple(b) for b in boxes])
-    sides = sides_from_clusters(
-        labels[is_player], xy[is_player, 0], los, offense, colors=colors[is_player]
-    )
-    side_by_id = {int(i): s for i, s in zip(ids[is_player], sides)}
+    return SnapBodies(ids, boxes, xy, colors, labels, is_player, int((~onf).sum()))
+
+
+@dataclass
+class SideAssignment:
+    side_by_id: dict[int, str]
+    line_ids: set[int]
+    n_referee: int
+    n_offfield: int
+    teams: TeamColors | None = None  # snap-frame team colors, to side ids that appear later
+
+
+def assign_sides(
+    frame: TrackedFrame,
+    calib: FieldCalibration,
+    los: float,
+    offense: str,
+    bodies: SnapBodies | None = None,
+) -> SideAssignment:
+    """Side per track id from the snap frame: color clusters voted by formation geometry.
+
+    Also names the line players (dropped downstream so the population matches
+    the coverage-only training data) using the same LOS-band rule as stills.
+    `bodies` reuses a snap-frame analysis already done (for the formation).
+    """
+    b = bodies if bodies is not None else snap_bodies(frame, calib)
+    isp = b.is_player
+    sides = sides_from_clusters(b.labels[isp], b.xy[isp, 0], los, offense, colors=b.colors[isp])
+    side_by_id = {int(i): s for i, s in zip(b.ids[isp], sides)}
     # line players via the still rule on a one-frame canonical table
-    pts = xy[is_player].copy()
+    pts = b.xy[isp].copy()
     if offense == "right":
         pts[:, 0] = FIELD_LENGTH - pts[:, 0]
         pts[:, 1] = FIELD_WIDTH - pts[:, 1]
     one = pd.DataFrame({"x": pts[:, 0], "y": pts[:, 1], "side": sides})
     line = line_player_mask(one)
-    line_ids = {int(i) for i, ln in zip(ids[is_player], line.to_numpy()) if ln}
-    teams = TeamColors.from_frame(colors, labels, is_player, sides)
-    return SideAssignment(side_by_id, line_ids, int((~is_player).sum()), int((~onf).sum()), teams)
+    line_ids = {int(i) for i, ln in zip(b.ids[isp], line.to_numpy()) if ln}
+    teams = TeamColors.from_frame(b.colors, b.labels, isp, sides)
+    return SideAssignment(side_by_id, line_ids, int((~isp).sum()), b.n_offfield, teams)
 
 
 def unclipped_mask_boxes(boxes: np.ndarray, image_height: int, edge_px: int = 4) -> np.ndarray:
