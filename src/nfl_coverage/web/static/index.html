@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coverage Analyzer</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #16181d; --muted: #5d6470; --line: #dde1e7;
+    --accent: #1f6feb; --accent-ink: #ffffff; --off: #1f6feb; --def: #d93a2b;
+    --high: #1a7f37; --medium: #9a6700; --low: #b42318; --given: #5d6470;
+    --warn-bg: #fff8e6; --warn-line: #f0d48a; --err-bg: #fdecea; --err-line: #f3b7b0;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --panel: #171a21; --ink: #e8eaee; --muted: #9aa3b1; --line: #2a2f3a;
+      --accent: #4c8dff; --off: #4c8dff; --def: #ff6b5c;
+      --high: #3fb950; --medium: #d29922; --low: #f85149; --given: #9aa3b1;
+      --warn-bg: #2a2213; --warn-line: #5c4a1f; --err-bg: #2d1615; --err-line: #6e2b27;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 24px;
+           border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: .01em; }
+  header .spacer { flex: 1; }
+  main { max-width: 1120px; margin: 0 auto; padding: 20px 16px 60px; }
+  section.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+                 padding: 18px 20px; margin-bottom: 16px; box-shadow: var(--shadow); }
+  h2 { font-size: 15px; margin: 0 0 10px; font-weight: 650; }
+  h2 .step { display: inline-block; min-width: 22px; height: 22px; border-radius: 11px; background: var(--accent);
+             color: var(--accent-ink); font-size: 12px; text-align: center; line-height: 22px; margin-right: 8px; }
+  h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 6px; }
+  p.hint { color: var(--muted); margin: 4px 0 10px; font-size: 14px; }
+  button, select, input { font: inherit; color: inherit; }
+  button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 7px;
+           padding: 7px 14px; cursor: pointer; font-weight: 600; }
+  button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+  button:disabled { opacity: .5; cursor: default; }
+  input[type=number], input[type=text], select { background: var(--bg); border: 1px solid var(--line);
+           border-radius: 6px; padding: 5px 8px; width: 7.5em; }
+  label { color: var(--muted); font-size: 14px; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin: 8px 0; }
+  .drop { border: 2px dashed var(--line); border-radius: 10px; padding: 36px; text-align: center; color: var(--muted); }
+  .drop.over { border-color: var(--accent); color: var(--ink); }
+  video, img.frame { width: 100%; border-radius: 8px; display: block; background: #000; }
+  .strip { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px 10px; }
+  .thumb { flex: 0 0 150px; border: 2px solid transparent; border-radius: 7px; cursor: pointer; position: relative;
+           background: var(--bg); padding: 0; color: var(--ink); font-weight: 400; }
+  .thumb img { width: 100%; display: block; border-radius: 5px 5px 0 0; }
+  .thumb .cap { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 6px; color: var(--muted); }
+  .thumb .bar { height: 3px; background: var(--accent); opacity: .7; }
+  .thumb.sel { border-color: var(--accent); }
+  .thumb .tag { position: absolute; top: 5px; left: 5px; background: var(--accent); color: var(--accent-ink);
+                font-size: 11px; border-radius: 4px; padding: 0 5px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { border: 1px solid var(--line); border-radius: 999px; padding: 1px 10px; font-size: 13px; background: var(--bg); }
+  .conf { display: inline-block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+          border-radius: 4px; padding: 1px 6px; border: 1px solid currentColor; vertical-align: 1px; }
+  .conf.high { color: var(--high); } .conf.medium { color: var(--medium); }
+  .conf.low { color: var(--low); } .conf.given, .conf.detected, .conf.inferred { color: var(--given); }
+  .progress { height: 8px; border-radius: 4px; background: var(--bg); border: 1px solid var(--line); overflow: hidden; }
+  .progress > div { height: 100%; background: var(--accent); width: 0; transition: width .4s; }
+  .verdict { font-size: 20px; font-weight: 650; margin: 2px 0 4px; }
+  .verdict .arrow { color: var(--muted); padding: 0 6px; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+  .sub { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .sub .big { font-size: 16px; font-weight: 650; margin-bottom: 2px; }
+  ul.reasons { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
+  .note { border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: 8px; padding: 8px 12px;
+          font-size: 14px; margin: 8px 0; }
+  .note.err { border-color: var(--err-line); background: var(--err-bg); }
+  .note ul { margin: 2px 0; padding-left: 18px; }
+  .bars .b { display: grid; grid-template-columns: 9.5em 1fr 3em; gap: 8px; align-items: center; font-size: 13px; margin: 3px 0; }
+  .bars .track { height: 8px; background: var(--bg); border-radius: 4px; overflow: hidden; border: 1px solid var(--line); }
+  .bars .fill { height: 100%; background: var(--accent); }
+  table.form { border-collapse: collapse; width: 100%; font-size: 14px; }
+  table.form td, table.form th { padding: 7px 8px; border-top: 1px solid var(--line); text-align: left; vertical-align: top; }
+  table.form th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; border-top: 0; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  .hidden { display: none !important; }
+  .muted { color: var(--muted); }
+  .legend span { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: 0; }
+  @media (max-width: 640px) { header { padding: 12px 16px; } section.card { padding: 14px; } .thumb { flex-basis: 120px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Coverage Analyzer</h1>
+  <span class="muted" id="clipName"></span>
+  <span class="spacer"></span>
+  <select id="recent" title="Reopen a clip"><option value="">Recent clips</option></select>
+  <button class="ghost" id="newClip">New clip</button>
+</header>
+<main>
+  <section class="card" id="uploadCard">
+    <h2>Upload a play</h2>
+    <p class="hint">An mp4 of one play from an elevated all-22 angle, a few seconds before the snap through the throw.</p>
+    <div class="drop" id="drop">Drop an mp4 here, or <label style="color:var(--accent);cursor:pointer"><input type="file" id="file" accept="video/mp4,video/*" class="hidden">choose a file</label></div>
+    <div class="row hidden" id="uploading"><div class="progress" style="flex:1"><div id="upBar"></div></div><span class="muted">uploading and sampling frames...</span></div>
+  </section>
+
+  <div id="clipView" class="hidden">
+    <section class="card">
+      <video id="video" controls preload="metadata"></video>
+      <div class="row"><button class="ghost hidden" id="toSnap">Jump to the snap</button><button class="ghost hidden" id="toPlayed">Jump to the played read</button></div>
+    </section>
+
+    <section class="card hidden" id="resultCard"></section>
+
+    <section class="card">
+      <h2><span class="step">1</span>Pick a still pre-snap frame</h2>
+      <p class="hint">The frame the field is calibrated on. The suggested one is the last still frame before the play moves. Motion is the bar under each frame.</p>
+      <div class="strip" id="strip"></div>
+    </section>
+
+    <section class="card hidden" id="linesCard">
+      <h2><span class="step">2</span>Name the yard lines</h2>
+      <p class="hint" id="linesHint"></p>
+      <img class="frame" id="linesImg" alt="Detected yard lines, numbered from the left">
+      <div class="row">
+        <label>Line</label>
+        <select id="namedLine"></select>
+        <label>is the painted</label>
+        <select id="firstPainted"></select>
+        <label>and the numbers to its right</label>
+        <select id="goingUp"><option value="1">go up</option><option value="0">go down</option></select>
+      </div>
+      <p class="hint">Pick any line you can read a number on — the one through a painted 10, 20, 30... is easiest. The others follow 5 yards apart; a line the spacing says is not a yard line (the edge of end-zone paint, an overlay) is marked ✕ and left out.</p>
+      <div class="chips" id="yardChips"></div>
+      <details style="margin-top:8px"><summary>Lines missed or wrong?</summary>
+        <div class="row"><label><input type="checkbox" id="sensitive"> search harder for faint or short lines</label><button class="ghost" id="redetect">Detect again</button></div>
+        <div class="row"><label>Or give each line's field x (0-120, left to right; - for not a yard line):</label><input type="text" id="yardsText" style="width:22em" placeholder="e.g. 50, 55, -, 60, 65"></div>
+      </details>
+      <div class="row"><button id="fitBtn">Fit the field</button><span class="muted" id="fitMsg"></span></div>
+      <div id="fitWarn"></div>
+      <div id="gridWrap" class="hidden">
+        <img class="frame" id="gridImg" alt="The fitted field drawn over the frame">
+        <p class="hint">The yellow grid is labeled with painted yard numbers: they should sit on the painted numbers, and the grid on the painted yard lines, hashes and sidelines wherever players stand. Magenta circles are the landmarks the fit used (every 1-yard hash tick it found). If the numbers are off by a line, fix the painted number and fit again.</p>
+      </div>
+    </section>
+
+    <section class="card hidden" id="analyzeCard">
+      <h2><span class="step">3</span>Analyze the play</h2>
+      <p class="hint">Start the window at least half a second before the snap (the snap is found from the offensive line firing) and run it through the coverage declaring, about 2.5 s after the snap. It does not have to include the frame you calibrated: the calibration is carried along the clip to the window's first frame and refit there.</p>
+      <div class="row">
+        <label>From</label><input type="number" id="winStart" step="0.1" min="0"><label>s to</label><input type="number" id="winEnd" step="0.1" min="0"><label>s</label>
+        <label>Detection size</label><select id="imgsz"><option value="1920">1920 (film)</option><option value="1280">1280 (faster)</option></select>
+        <button id="analyzeBtn">Analyze</button>
+      </div>
+      <div id="progressWrap" class="hidden"><div class="progress"><div id="progBar"></div></div><p class="hint" id="progMsg"></p></div>
+      <div id="stageMsg"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let clip = null, pickedT = null, poller = null;
+
+function esc(s) { return String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function conf(c) { return c ? `<span class="conf ${esc(c)}">${esc(c)}</span>` : ""; }
+function fmt(x, d = 1) { return x === null || x === undefined ? "—" : Number(x).toFixed(d); }
+function file(name) { return `/api/clips/${clip.id}/files/${name}?v=${Date.now()}`; }
+function painted(x) { return Math.round(x <= 60 ? x - 10 : 110 - x); }
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, opts);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail || res.statusText);
+  return body;
+}
+function post(path, data) {
+  return api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+}
+
+// ---------------------------------------------------------------- upload / open
+async function upload(f) {
+  $("uploading").classList.remove("hidden"); $("upBar").style.width = "35%";
+  const fd = new FormData(); fd.append("file", f);
+  try {
+    const meta = await api("/api/clips", { method: "POST", body: fd });
+    $("upBar").style.width = "100%";
+    openClip(meta.id);
+  } catch (e) { alert("Upload failed: " + e.message); }
+  finally { $("uploading").classList.add("hidden"); }
+}
+$("file").addEventListener("change", (e) => e.target.files[0] && upload(e.target.files[0]));
+const drop = $("drop");
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); e.dataTransfer.files[0] && upload(e.dataTransfer.files[0]); });
+$("newClip").onclick = () => { history.replaceState(null, "", "/"); location.reload(); };
+
+async function loadRecent() {
+  const list = await api("/api/clips").catch(() => []);
+  $("recent").innerHTML = `<option value="">Recent clips</option>` +
+    list.map((c) => `<option value="${esc(c.id)}">${esc(c.name)} · ${esc(c.stage)}</option>`).join("");
+}
+$("recent").onchange = (e) => e.target.value && openClip(e.target.value);
+
+async function openClip(id) {
+  clip = await api(`/api/clips/${id}`);
+  history.replaceState(null, "", `/?clip=${id}`);
+  $("uploadCard").classList.add("hidden"); $("clipView").classList.remove("hidden");
+  $("clipName").textContent = clip.name;
+  $("video").src = `/api/clips/${id}/video`;
+  buildStrip();
+  $("winStart").value = clip.window.start; $("winEnd").value = clip.window.end;
+  if (clip.calibration) {
+    pickedT = clip.calibration.t;
+    await showLines(clip.calibration.t, false);
+    showGrid(clip.calibration);
+  }
+  render();
+  if (["queued", "calibrating", "tracking", "reading"].includes(clip.stage)) startPolling();
+  loadRecent();
+}
+
+// ---------------------------------------------------------------- step 1: frame
+function buildStrip() {
+  const max = Math.max(1, ...clip.samples.map((s) => s.score));
+  $("strip").innerHTML = clip.samples.map((s) => `
+    <button class="thumb" data-t="${s.t}" data-i="${s.i}">
+      ${s.i === clip.suggested_sample ? '<span class="tag">suggested</span>' : ""}
+      <img loading="lazy" src="/api/clips/${clip.id}/files/samples/${s.image}" alt="">
+      <div class="bar" style="width:${Math.max(2, 100 * s.score / max)}%"></div>
+      <div class="cap"><span>${s.t.toFixed(1)} s</span><span>motion ${s.score.toFixed(0)}</span></div>
+    </button>`).join("");
+  $("strip").querySelectorAll(".thumb").forEach((b) => b.onclick = () => showLines(Number(b.dataset.t), true));
+  const sel = $("strip").querySelector(`[data-i="${clip.suggested_sample}"]`);
+  if (sel && !clip.calibration) sel.scrollIntoView({ inline: "center", block: "nearest" });
+}
+function markSelected(t) {
+  $("strip").querySelectorAll(".thumb").forEach((b) => b.classList.toggle("sel", Math.abs(Number(b.dataset.t) - t) < 1e-3));
+}
+
+// ---------------------------------------------------------------- step 2: lines + fit
+async function showLines(t, resetGrid) {
+  pickedT = t; markSelected(t);
+  $("linesCard").classList.remove("hidden");
+  $("linesHint").textContent = "Finding yard lines...";
+  const sens = $("sensitive").checked;
+  try {
+    const r = await post(`/api/clips/${clip.id}/lines`, { t, min_length: sens ? 150 : 250, votes: sens ? 80 : 120 });
+    setLines(r);
+    $("linesImg").src = file("lines.jpg");
+    const stray = r.n - r.n_yard_lines;
+    $("linesHint").textContent = r.n_yard_lines >= 2
+      ? `Found ${r.n_yard_lines} yard lines at ${t.toFixed(1)} s, numbered from the left` +
+        (stray ? ` (and ${stray} line${stray > 1 ? "s" : ""} that ${stray > 1 ? "are" : "is"} not a yard line, marked ✕)` : "") + "."
+      : `Found ${r.n_yard_lines} yard line${r.n_yard_lines === 1 ? "" : "s"} — at least 2 are needed. Try another frame, or search harder below.`;
+  } catch (e) { $("linesHint").textContent = "Line detection failed: " + e.message; }
+  if (resetGrid) { $("gridWrap").classList.add("hidden"); $("fitMsg").textContent = ""; }
+  $("linesCard").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+$("redetect").onclick = () => pickedT !== null && showLines(pickedT, true);
+for (let y = 0; y <= 50; y += 5) $("firstPainted").add(new Option(y === 0 ? "goal line (0)" : String(y), y));
+$("firstPainted").value = "40";
+let offsets = [];  // 5-yd index per detected line; null = not a yard line
+function setLines(r) {
+  offsets = r.offsets || [];
+  const keep = $("namedLine").value;
+  $("namedLine").innerHTML = offsets.map((o, k) => o === null ? "" : `<option value="${k + 1}">${k + 1}</option>`).join("");
+  if (keep && offsets[Number(keep) - 1] != null) $("namedLine").value = keep;
+  updateChips();
+}
+function fieldXs() {
+  // mirrors fieldlines.field_x_for_lines: x rises to the right in the image
+  const txt = $("yardsText").value.trim();
+  if (txt) return txt.split(/[\s,]+/).map((v) => (v === "-" || v === "" ? null : Number(v)));
+  const n = Number($("namedLine").value) - 1, p = Number($("firstPainted").value), up = $("goingUp").value === "1";
+  if (!(n >= 0) || offsets[n] == null) return offsets.map(() => null);
+  const xn = p === 50 ? 60 : (up ? p + 10 : 110 - p);
+  return offsets.map((o) => (o === null ? null : xn + 5 * (o - offsets[n])));
+}
+function updateChips() {
+  const xs = fieldXs();
+  const bad = xs.some((x) => x !== null && !(x >= 10 && x <= 110));
+  $("yardChips").innerHTML = xs.map((x, k) => `<span class="chip"${x === null ? ' style="opacity:.55"' : ""}>line ${k + 1}: ${x === null ? "✕ not a yard line" : bad ? "?" : painted(x)}</span>`).join("")
+    + (bad ? `<span class="chip" style="color:var(--low)">runs past a goal line — check the painted number and direction</span>` : "");
+}
+["namedLine", "firstPainted", "goingUp", "yardsText"].forEach((id) => $(id).addEventListener("input", updateChips));
+$("fitBtn").onclick = async () => {
+  $("fitBtn").disabled = true; $("fitMsg").textContent = "Fitting (about 10 s)..."; $("fitWarn").innerHTML = "";
+  const sens = $("sensitive").checked;
+  const txt = $("yardsText").value.trim();
+  const body = { t: pickedT, min_length: sens ? 150 : 250, votes: sens ? 80 : 120 };
+  if (txt) body.yards = fieldXs();
+  else { body.named_line = Number($("namedLine").value); body.painted = Number($("firstPainted").value); body.going_up = $("goingUp").value === "1"; }
+  try {
+    const cal = await post(`/api/clips/${clip.id}/calibrate`, body);
+    clip = await api(`/api/clips/${clip.id}`);
+    showGrid(cal); render();
+  } catch (e) { $("fitMsg").innerHTML = `<span style="color:var(--low)">${esc(e.message)}</span>`; }
+  finally { $("fitBtn").disabled = false; }
+};
+function showGrid(cal) {
+  $("gridWrap").classList.remove("hidden");
+  $("gridImg").src = file("grid.jpg");
+  $("fitMsg").textContent = `Fit on ${cal.n_landmarks} landmarks across ${cal.n_rows} field rows` +
+    (cal.n_number_edges != null ? ` (${cal.n_number_edges} painted-number edges)` : "") +
+    `; mean error ${cal.mean_error.toFixed(2)} yd (max ${cal.max_error.toFixed(2)}).`;
+  $("fitWarn").innerHTML = [cal.warning, cal.depth_warning].filter(Boolean).map((w) => `<div class="note">${esc(w)}</div>`).join("");
+  if (cal.yards) {
+    const k = cal.yards.findIndex((y) => y !== null && y !== undefined);
+    if (k >= 0) {
+      if (!offsets.length) offsets = cal.yards.map((y) => (y === null ? null : Math.round((y - cal.yards[k]) / 5)));
+      $("namedLine").innerHTML = offsets.map((o, j) => o === null ? "" : `<option value="${j + 1}">${j + 1}</option>`).join("");
+      $("namedLine").value = String(k + 1);
+      $("firstPainted").value = String(painted(cal.yards[k]));
+      $("goingUp").value = cal.yards[k] < 60 ? "1" : "0";  // painted numbers rise until midfield (x=60)
+      updateChips();
+    }
+  }
+}
+
+// ---------------------------------------------------------------- step 3: analyze
+$("analyzeBtn").onclick = async () => {
+  try {
+    clip = await post(`/api/clips/${clip.id}/analyze`, {
+      start: Number($("winStart").value), end: Number($("winEnd").value), imgsz: Number($("imgsz").value),
+    });
+    render(); startPolling();
+  } catch (e) { $("stageMsg").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
+};
+function startPolling() {
+  clearInterval(poller);
+  poller = setInterval(async () => {
+    clip = await api(`/api/clips/${clip.id}`).catch(() => clip);
+    render();
+    if (!["queued", "calibrating", "tracking", "reading"].includes(clip.stage)) clearInterval(poller);
+  }, 1500);
+}
+
+// ---------------------------------------------------------------- render
+function render() {
+  const busy = ["queued", "calibrating", "tracking", "reading"].includes(clip.stage);
+  $("analyzeCard").classList.toggle("hidden", !clip.calibration);
+  $("analyzeBtn").disabled = busy;
+  $("progressWrap").classList.toggle("hidden", !busy);
+  $("progBar").style.width = `${Math.round(100 * (clip.progress || 0))}%`;
+  $("progMsg").textContent = clip.stage === "tracking"
+    ? `Tracking players: ${Math.round(100 * (clip.progress || 0))}% (a few minutes on a CPU)`
+    : clip.stage === "reading" ? "Reading the snap, the formation and the coverage..."
+    : clip.stage === "calibrating" ? "Carrying the calibration from the calibrated frame to the window..." : "Queued...";
+  $("stageMsg").innerHTML = clip.stage === "error" ? `<div class="note err">Analysis failed: ${esc(clip.message)}</div>`
+    : clip.stage === "needs_input" ? `<div class="note">${esc(clip.message)}</div>` : "";
+  renderResult(clip.result);
+}
+
+function readCard(title, r) {
+  if (!r) return `<div class="sub"><h3>${title}</h3><div class="muted">not read</div></div>`;
+  return `<div class="sub"><h3>${title} · ${esc(r.frame)}</h3>
+    <div class="big">${esc(r.shell)} ${conf(r.confidence)}</div>
+    <div>${esc(r.family)}</div>
+    <ul class="reasons">${(r.reasons || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
+}
+
+function renderResult(res) {
+  const card = $("resultCard");
+  $("toSnap").classList.toggle("hidden", !res); $("toPlayed").classList.toggle("hidden", !res);
+  if (!res) { card.classList.add("hidden"); return; }
+  card.classList.remove("hidden");
+  const rep = res.report, f = res.formation, inf = f.inferred, used = f.used, src = f.source;
+  const variant = (rep.variant || []).slice(0, 4);
+  const caveats = [...new Set(rep.caveats || [])];
+  card.innerHTML = `
+    <h3>The read</h3>
+    <div class="verdict">${esc(rep.shown.shell)}<span class="arrow">→</span>${esc(rep.played ? rep.played.shell : "?")}</div>
+    <div>${esc(rep.disguise_text)}${rep.disguise_label ? ` <span class="chip">${esc(rep.disguise_label)} · ${rep.disguise_score.toFixed(2)}</span>` : ""}</div>
+    ${caveats.length ? `<div class="note"><b>Caveats</b><ul>${caveats.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}
+    ${res.warnings.length ? `<div class="note"><b>Your values disagree with the formation read</b><ul>${res.warnings.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}
+    <div class="grid2" style="margin-top:12px">
+      ${readCard("Shown at the snap", rep.shown)}
+      ${readCard("Played", rep.played)}
+      <div class="sub"><h3>Variant (model on the snap frame)</h3>
+        ${variant.length ? `<div class="bars">${variant.map(([c, p]) => `<div class="b"><span>${esc(c)}</span><div class="track"><div class="fill" style="width:${(100 * p).toFixed(0)}%"></div></div><span>${(100 * p).toFixed(0)}%</span></div>`).join("")}</div>
+        <div style="margin-top:4px">${conf(rep.variant_confidence)} <span class="muted">the structure above is the reliable read; this is the model's best guess at the exact coverage</span></div>`
+        : `<div class="muted">no model bundle found (models/still_shown.joblib)</div>`}
+      </div>
+      <div class="sub"><h3>Tracking</h3>
+        <div>${res.n_players_tracked} coverage players tracked; at the snap ${res.sides.offense} offense, ${res.sides.defense} defense, ${res.sides.line} line players set aside, ${res.sides.non_players} others.</div>
+        <div class="muted" style="margin-top:4px">Played shell declared at +${(res.played_frame.rel_frame / 10).toFixed(1)} s.</div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:18px">Snap and formation</h3>
+    <p class="hint">Inferred from the film. Type over any value and re-read — a few seconds, no re-tracking.</p>
+    <table class="form">
+      <tr><th>What</th><th>Inferred</th><th>Used</th><th>Your value</th></tr>
+      <tr><td>Snap</td><td>${fmt(res.snap.detected_t)} s ${conf(res.snap.confidence)}</td><td>${fmt(res.snap.t)} s <span class="conf ${res.snap.source}">${res.snap.source}</span></td>
+          <td><input type="number" id="ovSnap" step="0.1" placeholder="s"></td></tr>
+      <tr><td>Offense side</td><td>${esc(inf.offense ?? "?")} ${conf(inf.offense_confidence)}</td><td>${esc(used.offense)} <span class="conf ${src.offense}">${src.offense}</span></td>
+          <td><select id="ovOffense"><option value="">—</option><option value="left">left</option><option value="right">right</option></select></td></tr>
+      <tr><td>Line of scrimmage (field x)</td><td>${fmt(inf.los)} <span class="muted">(${fmt(inf.los_range[0])}–${fmt(inf.los_range[1])})</span> ${conf(inf.los_confidence)}</td><td>${fmt(used.los)} <span class="conf ${src.los}">${src.los}</span></td>
+          <td><input type="number" id="ovLos" step="0.1" placeholder="yd"></td></tr>
+      <tr><td>Ball (field y)</td><td>${fmt(inf.ball_y)} ${conf(inf.ball_y_confidence)}</td><td>${fmt(used.ball_y)} <span class="conf ${src.ball_y}">${src.ball_y}</span></td>
+          <td><input type="number" id="ovBall" step="0.1" placeholder="yd"></td></tr>
+    </table>
+    <div class="row"><button id="rereadBtn">Re-read</button><button class="ghost" id="resetBtn">Back to inferred</button><span class="muted" id="rereadMsg"></span></div>
+    <details><summary>Why these values</summary><ul class="reasons">${[...res.snap.reasons, ...inf.reasons].map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>
+
+    <div class="grid2" style="margin-top:16px">
+      <div><h3>Snap frame</h3><img class="frame" src="${file("snap.jpg")}" alt="The snap frame with every player boxed by side">
+        <div class="legend muted" style="font-size:13px;margin-top:4px"><span style="background:var(--off)"></span>offense<span style="background:var(--def)"></span>defense<span style="background:#aaa"></span>line (set aside)<span style="background:#fff;border:1px solid var(--line)"></span>other<span style="background:#ffe600"></span>LOS and ball</div></div>
+      <div><h3>Top-down</h3><img class="frame" style="background:#fff" src="${file("topdown.png")}" alt="Top-down render of the tracked play"></div>
+    </div>`;
+  const o = clip.overrides || {};
+  if (o.snap_t != null) $("ovSnap").value = o.snap_t;
+  if (o.offense) $("ovOffense").value = o.offense;
+  if (o.los != null) $("ovLos").value = o.los;
+  if (o.ball_y != null) $("ovBall").value = o.ball_y;
+  $("rereadBtn").onclick = () => reread(false);
+  $("resetBtn").onclick = () => reread(true);
+  $("toSnap").onclick = () => { $("video").currentTime = res.snap.t; $("video").pause(); };
+  $("toPlayed").onclick = () => { $("video").currentTime = res.played_frame.t; $("video").pause(); };
+}
+
+async function reread(reset) {
+  const num = (id) => (reset || $(id).value === "" ? null : Number($(id).value));
+  const body = { snap_t: num("ovSnap"), los: num("ovLos"), ball_y: num("ovBall"),
+                 offense: reset || !$("ovOffense").value ? null : $("ovOffense").value };
+  $("rereadBtn").disabled = true; $("rereadMsg").textContent = "Re-reading...";
+  try {
+    await post(`/api/clips/${clip.id}/reread`, body);
+    clip = await api(`/api/clips/${clip.id}`);
+    render();
+  } catch (e) { $("rereadMsg").innerHTML = `<span style="color:var(--low)">${esc(e.message)}</span>`; $("rereadBtn").disabled = false; }
+}
+
+// ---------------------------------------------------------------- boot
+const qid = new URLSearchParams(location.search).get("clip");
+if (qid) openClip(qid).catch(() => { history.replaceState(null, "", "/"); loadRecent(); });
+else loadRecent();
+</script>
+</body>
+</html>

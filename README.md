@@ -79,18 +79,37 @@ See [data/README.md](data/README.md) for download instructions (Kaggle API — n
 nfl-coverage-analyzer/
 ├── data/                  # datasets (gitignored) + download instructions
 ├── notebooks/             # exploration & prototyping
-├── scripts/               # download_data.py, train_*.py, calibrate_auto.py,
-│                          # analyze_still.py, ingest_clip.py, track_clip.py, run_disguise.py
+├── scripts/               # download_data.py, train_*.py, calibrate_auto.py, serve.py,
+│                          # analyze_still.py, ingest_clip.py, track_clip.py, detect_snap.py,
+│                          # run_disguise.py
 └── src/nfl_coverage/
     ├── data/              # loading & cleaning tracking CSVs; play context (team/down/distance)
     ├── features/          # pre/post-snap feature engineering
     ├── models/            # coverage classifiers + persistence
     ├── vision/            # detect, teams, homography, fieldlines (auto-calibration),
-    │                      # visibility guard, still bridge, clip ingest, track (ByteTrack)
-    └── analysis/          # shell reader, disguise components, harness, report, viz
+    │                      # visibility guard, still bridge, clip ingest, track (ByteTrack),
+    │                      # snap detection, formation (LOS / offense / ball), pipeline
+    ├── analysis/          # shell reader, disguise components, harness, report, viz
+    └── web/               # the page: FastAPI app + one static page
 ```
 
-### Running film through it
+### The page
+
+```bash
+.venv\Scripts\python scripts\serve.py      # then open http://127.0.0.1:8000
+```
+
+Upload an mp4, click a still pre-snap frame, name the leftmost detected yard line (its
+painted number and which way the numbers run) and check the fitted field grid, then
+Analyze. Tracking runs in the background (about 2-5 minutes on a CPU at 1920); the read
+appears under the video: shown and played structure with confidence and reasons, the
+variant model, the disguise verdict, caveats, the annotated snap frame and a top-down
+render. The snap, offense side, line of scrimmage and ball position are inferred from the
+film and can be typed over; a re-read takes seconds (tracked frames are cached). Clips and
+results live in `data/web/` (gitignored); snap times set by hand are logged against the
+detector's call in `data/processed/snap_labels.jsonl`.
+
+### Running film through it from the command line
 
 ```bash
 # 1. sample frames + contact sheet, then pick the pre-snap and post-snap frames
@@ -99,8 +118,9 @@ nfl-coverage-analyzer/
 .venv\Scripts\python scripts\calibrate_auto.py frame.png --roi 300 100 2260 1020 --min-length 150 --votes 80
 .venv\Scripts\python scripts\calibrate_auto.py frame.png --yards 40 45 50 55 --roi ... --far-sideline 100 240 --hash-y 400 750
 # 3. track the play and read it like tracking data (rotator named, movement features)
-.venv\Scripts\python scripts\track_clip.py clip.mp4 --calib pre.calibration.json --anchor 5.0 --start 5.0 --snap 5.5 --end 9.0 \
-    --los 49.9 --offense right --ball-y 27.5 --imgsz 1920
+#    (snap, LOS, offense side and ball position are inferred; --snap/--los/--offense/--ball-y override)
+.venv\Scripts\python scripts\track_clip.py clip.mp4 --calib pre.calibration.json --anchor 5.0 \
+    --start 4.5 --end 9.0 --imgsz 1920
 ```
 
 Every run prints a `CoverageReport`: the structural read (deep count, middle open/closed,
@@ -119,7 +139,7 @@ the state of play and known weak spots.
 - [ ] **5. Disguise detection** — ✅ rule-based shell reader (deep count, middle open/closed, corner technique) as the primary "shown"; ✅ `shell_rotation` (snap vs +2 s, rotator named) and `model_disagreement` components behind one interface; ✅ harness with no hand labels: the coverage label implies the played middle-of-field state (0.82 accuracy on week 1 of both seasons), rates by defense/down/distance, film confirmations logged to `data/processed/disguise_labels.jsonl`; next: corner-technique, pressure-bluff and man/zone-mask components
 - [ ] **6. Vision pipeline** — ✅ YOLO (input size 1280–1920 for all-22 frames), two-mode jersey descriptor with officials by stripes and sides voted with formation geometry, ✅ automatic field calibration from the painted markings (`vision/fieldlines.py`, ~0.2 yd, no clicking), ✅ field-visibility guard, ✅ ByteTrack player tracking with the calibration chained frame to frame (`vision/track.py`); next: fine-tuned detector, snap detection from motion
 - [x] **7. Still-image mode** — screenshot → detection → calibration → canonical frame → snap-feature model (54.8% holdout / 33.5% majority) via `scripts/analyze_still.py`, with the analyst QA loop (`data/processed/still_reviews.jsonl`)
-- [ ] **8. Clip mode & overlay** — ✅ `scripts/ingest_clip.py`: mp4 → sampled frames → pre-snap and post-snap reads → `CoverageReport` (structure + confidence, family, variant, disguise, reasons) with annotated frames; ✅ `scripts/track_clip.py`: canonical 10 Hz tracks from film so the tracking-data components run unchanged (first slice: movement features and rotator evidence work; its played-coverage reads do not yet match the analyst on the two test clips — see HANDOFF.md); the still path is verified on two 2026 all-22 clips (Cover 4 held; Cover 1 look → Cover 3 at the throw); next: the upload site (video + report under it), annotated overlay on the clip, sequence model with two heads
+- [ ] **8. Clip mode & overlay** — ✅ `scripts/ingest_clip.py`: mp4 → sampled frames → pre-snap and post-snap reads → `CoverageReport` (structure + confidence, family, variant, disguise, reasons) with annotated frames; ✅ `scripts/track_clip.py`: canonical 10 Hz tracks from film so the tracking-data components run unchanged (clip 1's tracked read matches the analyst end to end with the snap, LOS and offense side inferred; clip 2's tracked read uses a keyframe calibration found to be yards off below the hashes and is suspect — see HANDOFF.md); the still path is verified on two 2026 all-22 clips (Cover 4 held; Cover 1 look → Cover 3 at the throw); ✅ the page (`scripts/serve.py`): upload, calibrate one frame, the read under the video, overrides re-read in seconds; next: annotated overlay on the clip itself, sequence model with two heads
 - [ ] **9. Live feed overlay** — real-time(ish) per-play coverage overlay on a live video source (GPU + elevated camera angle required)
 
 ## Setup
