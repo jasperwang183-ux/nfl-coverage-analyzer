@@ -1,4 +1,4 @@
-# Session Handoff — updated 2026-09-24
+# Session Handoff — updated 2026-09-25
 
 ## Next session (agreed 2026-09-24), in order
 
@@ -11,7 +11,10 @@
    annotated frames and the top-down render as the "why". `ingest_clip.py`
    and `track_clip.py` are the server-side sequence; `result.json` is the
    contract for the page.
-2. **Snap detection - done 2026-09-25 (`vision/snap.py`, `scripts/detect_snap.py`).**
+2. **Snap detection and formation inference - done 2026-09-25.** Clip 1's tracked
+   read now needs no manual input but the calibration (formation: see its
+   section, including a 0.7 yd correction to clip 1's recorded LOS).
+   **Snap detection** (`vision/snap.py`, `scripts/detect_snap.py`):
    Within one frame on both sample clips, and the clip 1 tracked read with no
    `--snap` reproduces the analyst's Cover 4. See the section below. Left:
    wire it into the web page as the default with the user's pick as override,
@@ -29,6 +32,56 @@
 
 Sample clips with calibrations are tracked in `samples/sf-lar/` (see its README
 for the exact commands that reproduce every number below).
+
+## Formation inference (built 2026-09-25, `vision/formation.py`)
+
+`track_clip.py` no longer needs `--los`, `--offense` or `--ball-y`: at the
+detected snap frame, `infer_formation` reads them from the bodies' field
+positions and jersey-color clusters (via `track.snap_bodies`, shared with
+`assign_sides`), each with a confidence and reasons; given values override, and
+a disagreement of 0.5 yd or a different side is printed. Clip 1 end to end with
+nothing given but the calibration: snap 5.5 s, offense right, LOS 49.0, ball y
+26.1 -> shown 2-high open, played 4-deep Cover 4 (the analyst's call; the
+fourth deep defender is at 12.1 yd, so the played read is low confidence,
+correctly).
+
+- **Offense side = the shallower side.** Deepest body per side of the rough
+  LOS; the defense is the deeper side. Scored on Big Data Bowl week 1 with every
+  other play mirrored: 99.3% (2018) / 98.4% (2023) right; with a 3 yd margin
+  95.8% / 95.7% right, 0.0% / 0.4% wrong. Under a 1 yd margin it is not called
+  (goal line). Officials must be flagged first: the referee stands 10-15 yd
+  behind the offense (`is_player` = not striped, not a color outlier).
+  Post-snap crossing (bodies ending 5+ yd past the LOS within 2 s) was measured
+  too and is much weaker (74% right, 5% wrong): not used.
+- **LOS = middle of the neutral zone** between the two teams' front line
+  bodies: the split with the fewest jersey-color violations (ties: the widest
+  gap). Color clusters are mapped to teams by the deep defenders (7+ yd): in
+  clip 1's sun three defenders clustered with the white jerseys, and the
+  offense has almost no bodies clear of the line to vote with. The densest band
+  (the snap detector's rough LOS) was 1.1 yd off on clip 2 because more
+  offensive than defensive line bodies were detected.
+- **Ball y = the shotgun QB** (offense body 3-8.5 yd back within 2 yd of the
+  center's y; 2018 tracking: |QB y - ball y| median 0.14, 95th pct 0.41 yd),
+  **else the center** (the offensive line body nearest the lines' middle), low.
+
+**Checked against the ball itself - and a correction to the recorded LOS.**
+Clip 1's ball is visible under the center at 5.3 s and projects to x=49.2
+(front tip 49.1), y=27.3. **The recorded 49.9 used by every earlier clip 1 read
+is 0.7 yd too far toward the offense**: it matches the painted 40 (x=50) next to
+the ball. So every clip 1 defender depth before 2026-09-25 was 0.7-0.9 yd too
+deep. The tracked Cover 4 survives (12.1 yd vs the 12 yd threshold), but the
+"12 yd reads it on film" threshold was set on reads that used the wrong LOS and
+deserves a second look. Clip 2's ball is hidden at the snap; the center's hand
+one frame earlier puts it at 70.0-70.5 (the camera pans there, ~0.5 yd
+uncertain).
+
+| clip | inferred offense | inferred LOS | ball-seen LOS | inferred ball y | reference ball y |
+|---|---|---|---|---|---|
+| 1 | right (high, margin 6.6 yd) | 49.0 (high), range 48.3-49.7 | 49.2 | 26.1 (low, under center) | 27.3 (seen) |
+| 2 | right (high, margin 11.2 yd) | 70.2 (medium), range 69.3-71.0 | 70.0-70.5 | 23.5 (medium, shotgun QB) | 23.9 (recorded) |
+
+Not yet wired: `ingest_clip.py` (the still path) still requires `--los` and
+`--offense`; it can call `infer_formation` on its pre-snap frame the same way.
 
 ## Snap detection (built 2026-09-24, tuned on film 2026-09-25, `vision/snap.py`)
 
