@@ -1,8 +1,113 @@
 # Session Handoff — updated 2026-09-25
 
+## Calibration and formation hardened on new clips (2026-09-25, later)
+
+The page failed on the user's other clips (Dolphins @ Chargers 2023 wk 1 all-22, and four
+more 49ers-Rams captures): an internal error (0 yard lines found -> IndexError), fits
+"that can't be fit", 5-yd naming that broke on a missed line, and reads confused by
+non-players. Causes and fixes, all in `vision/fieldlines.py` unless noted:
+
+- **Yard lines were thrown away for their slant.** Only lines within 30 deg of vertical
+  were kept; near a goal line or zoomed in, yard lines run 35-55 deg off vertical. Any
+  long line that is not near-horizontal is a candidate now (`MIN_LINE_ANGLE`). Lines
+  found per frame went from 0-3 to 5-12 on the new clips.
+- **Paint mask** (`paint_mask`): white top-hat (paint in roof shadow still stands out)
+  or plain brightness, unsaturated, inside the largest turf region and next to turf.
+  The video player's title/controls/cursor and letterbox text are gone; telestrator
+  circles, broadcast yellow/blue lines and the orange down marker never passed.
+- **Gap-aware line indexing** (`index_lines`): spacing in local 5-yd units; a double
+  spacing is a missed line, an off-integer spacing drops the stray line (the edge of
+  the end-zone paint on the Dolphins wide shot). The person names ANY line (painted
+  number + direction), not "line 1"; `field_x_for_lines`.
+- **Hash rows from 1-yd ticks** (`find_tick_rows`): a candidate row is scored by how
+  many ticks sit on the 1-yd slots predicted from its crossings with the indexed yard
+  lines. Every matched tick is a landmark (field x at the whole yard) - 20-60
+  landmarks per frame instead of 2 per yard line. Tick rows also run inside both
+  sidelines and junk rows appear in bench areas, so the search tries each adjacent pair
+  as the hashes and lets the sidelines/numbers decide.
+- **Painted numbers straddle their line** (a digit each side): `number_edges` requires
+  paint on both sides, so a 5-yd line no longer borrows its neighbor's digits. That
+  makes a 5-yd mislabel visible: the page refits with the labels shifted 5 yd and warns
+  when the numbers clearly prefer the shift (5 of 5 Melbourne frames pick the true
+  labeling this way).
+- **Hash-only fits are accepted** (user decision: tight all-22 zooms often show nothing
+  else) with a depth warning that follows the read as a caveat; >=3 field rows are
+  still preferred when the frame has them. Under 8 landmarks is refused.
+- **Window no longer has to contain the calibrated frame** (`pipeline.carry_calibration`):
+  hop 0.25 s at a time through frame-to-frame homographies, then refit on the window's
+  first frame from its own paint, labeled by the carried calibration.
+- **Formation: a lone deep official flipped the offense side** (`formation.
+  offense_from_depth`): the Dolphins clip's referee stood in the end zone 14 yd behind
+  the offense and the striped-shirt check missed him. Deepest + second-deepest per
+  side; when they disagree the second-deepest decides at low confidence and the lone
+  body is set aside as an official (`Formation.suspect_official`). Week 1 BDB: 98.6% /
+  97.9% right clean (vs 99.1 / 98.2 deepest-only), 76% / 70% with a planted referee
+  (vs 52% / 28%).
+- **At most 11 per side** (`track.cap_sides`): similar kits (powder blue vs white/aqua)
+  put 13 on defense; the surplus moves back across from the color-decided bodies.
+
+Validation: 17 frames (11 new, 6 Melbourne) all calibrate; the 5 good Melbourne
+calibrations agree within 0.1-0.25 yd median with the true labels; grids checked by eye
+on the Dolphins close-up and wide shot and the tight 49ers zooms. A synthetic field seen
+through a known camera is recovered within 0.3 yd median (`tests/test_fieldlines.py`).
+Dolphins clip end to end on the page's API, calibrated at 5.0 s, window 12-17 s: carried
+in 28 hops, refit on 34 landmarks (hash-only, caveated), snap 15.6 s (high), offense left
+(low: the official), LOS 19.6 (high), 10 offense / 11 defense, 2-high open shown and
+played, no disguise, variant Cover 1 man 38%. No analyst call for that play yet.
+Clip 1 unchanged (Cover 4, corner bail). 125 tests.
+
+Still weak: jersey color between light kits; the striped-shirt check on small officials.
+
+## The page (first slice built 2026-09-25)
+
+`python scripts/serve.py` -> http://127.0.0.1:8000. Upload -> 0.5 s thumbnails with a
+motion bar, the last still sample before sustained motion suggested -> yard lines found
+and numbered on the chosen frame -> the user names line 1 (painted number + which way the
+numbers run; per-line field x as a fallback) -> `fieldlines.search_calibration` (~40 band
+settings in ~5 s: among fits reproducing their landmarks to < 0.3 yd mean / 0.8 max, the
+one on the most distinct field rows wins) -> the fitted field grid drawn back on the
+frame for the confirm -> Analyze (background thread, progress polled) ->
+`vision/pipeline.py`: `track_frames` (cached under `tracked/` as JPEG + JSON) then
+`read_tracked` (snap, formation, sides, tracks, shells, rotation, variant model,
+`CoverageReport`) -> result under the video: shown/played cards, variant bars, disguise,
+caveats, snap & formation table with overrides (re-read in seconds from the cache),
+annotated snap frame, top-down render. Manual snap times are logged next to the
+detector's call (`data/processed/snap_labels.jsonl`). `track_clip.py` is now a thin CLI
+over the same pipeline (`--from-tracked` re-reads a cache). 117 tests pass (13 new for the
+page on synthetic video).
+
+**Clip 1 through the page, driven in the browser:** 3 lines found at 5.5 s, named 35 up;
+fit on 10 landmarks / 6 rows, 0.20 yd; grid checked by eye on the painted lines, hashes,
+far sideline and near numbers; tracking 2 min 20 s; snap 5.5 s detected (high), offense
+right, LOS 49.0, ball y 26.1 -> 2-high open shown, 4-deep Cover 4 played, corner bail
+only (0.25): the analyst's read. Snap override to 5.6 s re-read and logged; "back to
+inferred" restored it.
+
+**Fixed on the way:**
+- The first page run called a 1.0 `rotation_up`: the line judge stood 0.6 yd inside the
+  far sideline under the searched calibration, was sided as the widest defender, took
+  the corner's role and made the corner's bail a non-corner bail. Snap-frame bodies within
+  2 yd of a sideline are now not players (`track.SNAP_SIDELINE_CLEAR`; of ~24K snap
+  positions in Big Data Bowl week 1 none is within 0.5 yd, one within 3).
+- Cached calibrations kept only the matrix; the visibility check takes the camera side
+  from the point pairs and called everything off-frame. The points are saved now.
+- `corner_bail` / `threshold_flicker` got plain-language disguise sentences.
+
+**Found, not fixed: `samples/sf-lar/calibrations/clip2_frame_035_17.50s.calibration.json`
+is several yards wrong below the hashes** (its landmarks are all on the far half: rows
+29.7, 39.3, 41.3, 53.3). The search refits that frame on 18 landmarks / 7 rows at 0.15
+yd, and its grid sits on the painted lines where the saved one drifts 4-14 yd. That file
+is a keyframe in clip 2's tracked read, so that read is suspect until it is refitted.
+The other five sample calibrations agree with the search within 0.3 yd.
+
+**Not in this slice:** overlay drawn on the playing video itself; the still path
+(`ingest_clip.py`) behind the page; a window picker on the video (start/end are typed,
+defaulted from the suggested frame -1 s / +4.5 s); multi-user job isolation (one YOLO job
+at a time, local use only).
+
 ## Next session (agreed 2026-09-24), in order
 
-1. **The web page.** FastAPI + one page: upload an mp4 -> sampled frames and
+1. **The web page - first slice done 2026-09-25 (see above).** Original plan: FastAPI + one page: upload an mp4 -> sampled frames and
    contact sheet -> the user picks the pre-snap frame and the snap time ->
    auto-calibration on that frame with a confirm step for which painted yard
    each detected line is (`calibrate_auto.py` logic; show the landmark
