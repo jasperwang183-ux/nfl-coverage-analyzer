@@ -30,8 +30,8 @@ for this project, not for redistribution.
 # snap detection from the line firing (prints the per-frame series and the call)
 .venv\Scripts\python scripts\detect_snap.py samples\sf-lar\clip1.mp4 \
     --calib samples\sf-lar\calibrations\clip1_frame_010_05.00s.calibration.json --anchor 5.0 \
-    --start 4.0 --end 7.5 --los 49.9 --imgsz 1920 --expect 5.5
-# clip 2: the snap is between the 8.0 s pre-snap frame and the 9.5 s freeze; never located by hand
+    --start 4.0 --end 7.5 --los 49.9 --imgsz 1920 --expect 5.5    # detected 5.5 s
+# clip 2: the ball leaves the center at 8.03-8.07 s (checked frame by frame); detected 7.9 s
 .venv\Scripts\python scripts\detect_snap.py samples\sf-lar\clip2.mp4 \
     --calib samples\sf-lar\calibrations\clip2_frame_016_08.00s.calibration.json --anchor 8.0 \
     --start 6.0 --end 9.6 --los 69.9 --imgsz 1920

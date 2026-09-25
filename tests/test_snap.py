@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from nfl_coverage.vision.snap import detect_snap, estimate_los, fit_onset, snap_series
+from nfl_coverage.vision.snap import detect_snap, estimate_los, snap_series
 
 LOS = 50.0
 STEP = 0.1
@@ -13,8 +13,8 @@ STEP = 0.1
 def _play(
     snap_frame: int,
     n_frames: int = 30,
-    jitter: float = 0.08,
-    accel: float = 5.0,
+    jitter: float = 0.05,
+    accel: float = 10.0,
     motion_id: int | None = None,
     motion_from: int = 0,
     seed: int = 0,
@@ -23,7 +23,9 @@ def _play(
     """Seven line bodies straddling the LOS, two deep safeties, two receivers, a QB.
 
     Everyone is still until `snap_frame`, then the line and the skill players
-    accelerate at `accel` yd/s^2. `motion_id` walks laterally at 4 yd/s from
+    accelerate at `accel` yd/s^2. Defaults match the sample film: pre-snap
+    jitter measured 0.01 (clip 1) to ~0.05 yd (clip 2), and the line was
+    0.5 yd off its set position within 0.1-0.2 s of the snap. `motion_id` walks laterally at 4 yd/s from
     `motion_from` (a man in motion: one body moving before the snap).
     """
     rng = np.random.default_rng(seed)
@@ -60,14 +62,6 @@ def _play(
 def test_estimate_los_finds_the_dense_band():
     x = np.array([49.0, 51.0, 49.2, 50.8, 49.1, 51.2, 44.0, 63.0, 63.5, 30.0])
     assert abs(estimate_los(x) - 50.0) < 0.6
-
-
-def test_fit_onset_places_the_ramp_start():
-    tau = np.arange(12) - 5.0  # flat for indices 0..5, ramp after
-    disp = np.where(tau > 0, 0.03 * tau**2, 0.0) + np.array(
-        [0.02, -0.01, 0.0, 0.01, -0.02, 0.0] + [0] * 6
-    )
-    assert fit_onset(disp) == 5
 
 
 def test_detects_the_snap_from_the_line_fire():
@@ -140,3 +134,12 @@ def test_series_has_one_row_per_frame_and_the_expected_columns():
     # before the snap the line is still; well after it, it has all moved
     assert s.loc[s["frame"] == 11, "line_moving"].iloc[0] == 0.0
     assert s.loc[s["frame"] == 19, "line_moving"].iloc[0] == pytest.approx(1.0)
+
+
+def test_a_slow_ramp_in_noisy_tracks_lands_late_but_close():
+    # half the film's line acceleration and more jitter than either clip: the
+    # first frames of motion hide in the noise, so the walk-back stops late
+    pos = _play(snap_frame=12, accel=5.0, jitter=0.08)
+    det = detect_snap(pos, los=LOS)
+    assert det.frame is not None
+    assert 0 <= det.frame - 12 <= 3
