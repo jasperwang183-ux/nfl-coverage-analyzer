@@ -18,6 +18,7 @@ and the per-defender disguise evidence need. This module:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -39,6 +40,13 @@ from nfl_coverage.vision.teams import (
 )
 
 SIDELINE_Y_MARGIN = -0.5
+# At the snap nobody lines up near a sideline: of ~24K snap-frame positions in Big
+# Data Bowl week 1 (2018 + 2023) one was within 3 yd of it and none within 0.5.
+# Bodies there are the line judge, the down judge or the chain crew; a margin of
+# 2 yd leaves a yard for calibration error at the far sideline. (On clip 1 a line
+# judge 0.6 yd inside the far sideline was sided as the widest defender, took the
+# corner's place and turned a corner bail into a 1.0 "rotation_up".)
+SNAP_SIDELINE_CLEAR = 2.0
 
 
 @dataclass
@@ -60,8 +68,12 @@ def track_players(
     conf: float = 0.3,
     imgsz: int = 1280,
     tracker: str = "bytetrack.yaml",
+    progress: Callable[[float], None] | None = None,
 ) -> list[TrackedFrame]:
-    """Track people through [start_s, end_s]; return one frame per `step_s` with ids."""
+    """Track people through [start_s, end_s]; return one frame per `step_s` with ids.
+
+    `progress` is called with the fraction of native frames processed (0-1).
+    """
     from ultralytics import YOLO  # deferred: heavy import
 
     cap = cv2.VideoCapture(str(video))
@@ -79,6 +91,8 @@ def track_players(
         if not ok:
             break
         t = fi / fps
+        if progress is not None:
+            progress((fi - first + 1) / max(1, last - first + 1))
         res = model.track(
             img, persist=True, tracker=tracker, classes=[0], conf=conf, imgsz=imgsz, verbose=False
         )[0]
@@ -150,7 +164,7 @@ class SnapBodies:
     xy: np.ndarray  # field coordinates (raw)
     colors: np.ndarray
     labels: np.ndarray  # 2-means jersey-color cluster
-    is_player: np.ndarray  # False for officials (striped) and color outliers
+    is_player: np.ndarray  # False: officials (striped), color outliers, sideline personnel
     n_offfield: int
 
 
@@ -166,6 +180,7 @@ def snap_bodies(frame: TrackedFrame, calib: FieldCalibration) -> SnapBodies:
     colors = torso_colors(frame.image, [tuple(b) for b in boxes])
     labels, is_player = cluster_teams(colors)
     is_player &= ~referee_mask(frame.image, [tuple(b) for b in boxes])
+    is_player &= np.minimum(xy[:, 1], FIELD_WIDTH - xy[:, 1]) >= SNAP_SIDELINE_CLEAR
     return SnapBodies(ids, boxes, xy, colors, labels, is_player, int((~onf).sum()))
 
 
@@ -194,6 +209,7 @@ def assign_sides(
     b = bodies if bodies is not None else snap_bodies(frame, calib)
     isp = b.is_player
     sides = sides_from_clusters(b.labels[isp], b.xy[isp, 0], los, offense, colors=b.colors[isp])
+    sides = cap_sides(sides, b.xy[isp, 0], los, offense)
     side_by_id = {int(i): s for i, s in zip(b.ids[isp], sides)}
     # line players via the still rule on a one-frame canonical table
     pts = b.xy[isp].copy()
@@ -205,6 +221,37 @@ def assign_sides(
     line_ids = {int(i) for i, ln in zip(b.ids[isp], line.to_numpy()) if ln}
     teams = TeamColors.from_frame(b.colors, b.labels, isp, sides)
     return SideAssignment(side_by_id, line_ids, int((~isp).sum()), b.n_offfield, teams)
+
+
+TEAM_SIZE = 11
+CONTESTED_BAND = 2.5  # yd either side of the LOS where sides come from jersey color
+
+
+def cap_sides(sides: np.ndarray, x: np.ndarray, los: float, offense: str) -> np.ndarray:
+    """At most 11 per side: move the surplus back across, from the color-decided bodies.
+
+    Away from the ball geometry decides a body's side; within CONTESTED_BAND of
+    the LOS jersey color does, and similar kits (powder blue vs white on the
+    Dolphins-Chargers clip) can put 13 on one side. The surplus is taken from the
+    contested bodies standing furthest toward the other team's side of the ball
+    (a defender a yard onto the offense's side is the likeliest miscall).
+    """
+    sides = np.asarray(sides).astype(object)
+    toward_off = (los - x) if offense == "right" else (x - los)  # > 0 = defense side
+    for side, other in (("Defense", "Offense"), ("Offense", "Defense")):
+        # move only into room on the other side (a 12th body there would just come back)
+        surplus = min(
+            int((sides == side).sum()) - TEAM_SIZE, TEAM_SIZE - int((sides == other).sum())
+        )
+        if surplus <= 0:
+            continue
+        cand = np.flatnonzero((sides == side) & (np.abs(x - los) < CONTESTED_BAND))
+        # likeliest miscalls first: for a defense surplus the bodies furthest toward the
+        # offense, for an offense surplus those furthest toward the defense
+        key = toward_off[cand] if side == "Defense" else -toward_off[cand]
+        for i in cand[np.argsort(key)][:surplus]:
+            sides[i] = other
+    return sides.astype(str)
 
 
 def unclipped_mask_boxes(boxes: np.ndarray, image_height: int, edge_px: int = 4) -> np.ndarray:
