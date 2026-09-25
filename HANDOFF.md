@@ -11,12 +11,12 @@
    annotated frames and the top-down render as the "why". `ingest_clip.py`
    and `track_clip.py` are the server-side sequence; `result.json` is the
    contract for the page.
-2. **Snap detection - built 2026-09-24 (`vision/snap.py`, `scripts/detect_snap.py`),
-   not yet run on film.** See the section below. First thing next session:
-   run the two `detect_snap.py` commands in `samples/README.md` (clip 1 must
-   land at 5.5 s; clip 2's true snap is unknown, between 8.0 and 9.5 s) and
-   tune `BODY_DISP` / `FIRE_FRAC` on what the series shows. Blocked today by
-   Smart App Control refusing the unsigned `torch.dll` (see Environment notes).
+2. **Snap detection - done 2026-09-25 (`vision/snap.py`, `scripts/detect_snap.py`).**
+   Within one frame on both sample clips, and the clip 1 tracked read with no
+   `--snap` reproduces the analyst's Cover 4. See the section below. Left:
+   wire it into the web page as the default with the user's pick as override,
+   and log each pick against the detector's call (the labeling loop for the
+   1D CNN).
 3. **Tracker tuning.** Track loss at zooms (clip 2's deep 49er at rel 15);
    try BoT-SORT with appearance re-id, lower confidence for continuation, and
    feed the re-identified ids the same team reference. Then the chained
@@ -30,7 +30,7 @@
 Sample clips with calibrations are tracked in `samples/sf-lar/` (see its README
 for the exact commands that reproduce every number below).
 
-## Snap detection (built 2026-09-24, `vision/snap.py`; untested on film)
+## Snap detection (built 2026-09-24, tuned on film 2026-09-25, `vision/snap.py`)
 
 Decisions, agreed before building:
 - **Placement: after the homography, in field space.** Yards are camera-invariant
@@ -53,15 +53,46 @@ Decisions, agreed before building:
   labeling loop (log it against the detector's call, like `still_reviews`).
 
 How it works: per frame, the set line = bodies in the LOS band (given `--los`,
-or the densest 5-yd band of bodies) over the trailing 0.5 s; it *fires* when
-60% of them are > 0.5 yd from their window mean for 2 consecutive frames. The
-snap frame (rel_frame 0, the last still frame) is then placed by a
-flat-then-quadratic-ramp change-point fit per body over the two windows before
-the fire, median over bodies (a walking body is one outlier, not a bias).
-Confidence from bodies set / fraction fired / stillness before. 10 synthetic
-tests (`tests/test_snap.py`): jittered tracks, man in motion, a shifting TE,
-no fire, too few bodies, ball confirm/contradict. `track_clip.py --snap` is
-optional: absent, the detected frame is used; present, the offset is printed.
+or the densest 5-yd band of bodies) over the trailing 0.5 s. It *fires* when
+the line's mean displacement from its window mean passes 0.3 yd (or its own
+pre-fire noise, median + 4 robust sd from a window lagged 3 frames) for 2
+frames, with 40% of the bodies individually past 0.3 yd. At least 4 bodies
+must be set the frame before; only 3 need to stay tracked while it fires. The
+snap frame (rel_frame 0, the last still frame) is the last frame before the
+fire whose mean displacement is below half the fire threshold. Confidence from
+bodies set / share fired / stillness up to the snap. 10 synthetic tests
+(`tests/test_snap.py`), with the synthetic line at film values (10 yd/s^2,
+0.05 yd jitter). `track_clip.py --snap` is optional: absent, the detected frame
+is used; present, the offset is printed. `detect_snap.py --positions` saves
+field positions and `--from-positions` re-runs the detector without
+re-tracking (tuning takes seconds, not minutes).
+
+**Film results (2026-09-25):**
+
+| clip | reference snap | detected | fire confirmed | confidence |
+|---|---|---|---|---|
+| 1 | 5.5 s (playback resumes) | 5.5 s | 5.7 s | medium 0.68 |
+| 2 | ~8.0 s (ball leaves the center 8.03-8.07 s, seen frame by frame) | 7.9 s | 8.1 s | medium 0.63 |
+
+Clip 2's snap is also the frame the analyst used as "pre-snap" (8.0 s), so
+that read sits right at the snap. Clip 1 tracked end to end with no `--snap`
+(`--start 4.5`): shown 2-high MOF-open -> played 4-deep Cover 4, corner bails
+only (0.25) - same as with the manual snap, and the analyst's call.
+
+What the film changed, from the first cut:
+- A fixed per-body rule (60% of bodies past 0.5 yd) confirmed the fire 0.5-0.7 s
+  late: pass-setting linemen move a few tenths of a yard in the first 0.2 s,
+  and O/D-line boxes merge once engaged (tracked count drops to 3). The line
+  *mean* displacement jumps in the first frame after the snap on both clips
+  (0.05 -> 0.49 yd; 0.22 -> 0.53 yd).
+- A noise threshold estimated on the frames right before a candidate climbs
+  with the ramp and never fires: the noise window is lagged 3 frames.
+- A per-body flat-then-quadratic-ramp fit placed clip 2 0.4 s early (one
+  jittery merged box, 3-4 points per body): replaced by the walk-back.
+- Known limit, pinned by a test: a slow ramp in noisy tracks (half the film's
+  acceleration, 0.08 yd jitter) lands up to 3 frames late.
+- Only 5-6 of ~9 line bodies are found (merged boxes); the count is a
+  confidence term, so better detection raises confidence, not accuracy.
 
 Known limits to check on film: a breakdown video that resumes from a freeze
 1 s post-snap (clip 2 at 16.5 s) shows a line already in pass sets moving all
@@ -419,7 +450,8 @@ partial views degrade gracefully.
 
 - Windows + OneDrive venv: native-extension imports (scipy/sklearn) can transiently fail
   with an "Application Control policy" DLL error — retry once before debugging.
-- **2026-09-24 evening: not transient any more.** `import torch` fails every time with
+- **2026-09-25: resolved - the user turned Smart App Control off; torch loads.**
+  History: **2026-09-24 evening it was not transient any more.** `import torch` fails every time with
   `WinError 4551 ... torch\lib\torch.dll` and the Code Integrity log (event 3077) says the
   DLL "did not meet the Enterprise signing level requirements"; the registry shows Smart
   App Control enforcing (`HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy`,
