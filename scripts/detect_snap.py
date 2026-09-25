@@ -41,8 +41,21 @@ def main() -> None:
     ap.add_argument("--conf", type=float, default=0.3)
     ap.add_argument("--imgsz", type=int, default=1280)
     ap.add_argument("--series", type=Path, default=None, help="write the feature series (csv)")
+    ap.add_argument(
+        "--positions",
+        type=Path,
+        default=None,
+        help="write the field positions (parquet) to re-run the detector without re-tracking",
+    )
+    ap.add_argument(
+        "--from-positions", type=Path, default=None, help="skip tracking; read saved positions"
+    )
     args = ap.parse_args()
 
+    if args.from_positions is not None:
+        pos = pd.read_parquet(args.from_positions)
+        report(detect_snap(pos, los=args.los, step_s=args.step), args)
+        return
     frames = track_players(
         args.video, args.start, args.end, args.step, args.yolo, args.conf, args.imgsz
     )
@@ -57,7 +70,13 @@ def main() -> None:
         print("  !", n)
 
     pos = field_positions(frames, chain.calibrations)
-    det = detect_snap(pos, los=args.los, step_s=args.step)
+    if args.positions is not None:
+        pos.to_parquet(args.positions, index=False)
+        print(f"positions -> {args.positions}")
+    report(detect_snap(pos, los=args.los, step_s=args.step), args)
+
+
+def report(det, args) -> None:
     with pd.option_context("display.width", 140, "display.max_rows", 500):
         print(det.series.round(2).to_string(index=False))
     if args.series is not None:

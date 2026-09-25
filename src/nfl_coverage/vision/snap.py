@@ -40,10 +40,15 @@ from nfl_coverage.vision.homography import FieldCalibration, on_field
 
 # defaults (yards, frames at the 10 Hz sampling step)
 STILL_FRAMES = 5  # trailing window the line must have been set over (0.5 s)
-BODY_DISP = 0.5  # a body has "moved" when it is this far from its window mean
-FIRE_FRAC = 0.6  # this fraction of the set line moving together = the snap
+BODY_DISP = 0.3  # a body has "moved" when it is this far from its window mean
+FIRE_DISP = 0.3  # floor on the line's mean displacement that counts as firing
+NOISE_K = 4.0  # ... raised to the pre-fire mean + NOISE_K sd on a jittery clip
+FIRE_FRAC = 0.4  # this share of the line past BODY_DISP, at the fire or the frame after
 SUSTAIN = 2  # the fire must hold this many consecutive frames
-MIN_LINE = 4  # fewer set bodies in the LOS band = no formation to read
+MIN_LINE = 4  # set bodies in the LOS band the frame before the fire
+MIN_TRACKED = 3  # line bodies still tracked while it fires (they merge once engaged)
+NOISE_LAG = 3  # frames between the noise window and a fire candidate
+STILL_SHARE = 0.5  # the line counts as still below this share of the fire threshold
 LINE_DEPTH = 2.5  # LOS band half-depth (same rule as still.line_player_mask)
 LINE_HALFWIDTH = 4.5  # LOS band half-width about the line's y center
 MIN_PRESENCE = 0.6  # a body must be tracked in this share of the window
@@ -216,27 +221,6 @@ def snap_series(
     )
 
 
-def fit_onset(disp: np.ndarray) -> int:
-    """Change point of a flat-then-ramp series: index j minimizing the least-squares error
-    of `disp[m] = 0 for m <= j, c * (m - j)^2 for m > j` (constant acceleration from rest).
-
-    Returns the last flat index; the ramp starts right after it.
-    """
-    n = len(disp)
-    best_j, best_sse = 0, np.inf
-    for j in range(n):
-        flat = disp[: j + 1]
-        ramp = disp[j + 1 :]
-        sse = float((flat**2).sum())
-        if len(ramp):
-            k = np.arange(1, len(ramp) + 1, dtype=float) ** 2
-            c = max(0.0, float((ramp * k).sum() / (k * k).sum()))
-            sse += float(((ramp - c * k) ** 2).sum())
-        if sse < best_sse - 1e-12:
-            best_j, best_sse = j, sse
-    return best_j
-
-
 @dataclass
 class SnapDetection:
     frame: int | None  # kept-frame index of the snap (last still frame), None if not found
@@ -256,91 +240,111 @@ def detect_snap(
     step_s: float = 0.1,
     window: int = STILL_FRAMES,
     body_disp: float = BODY_DISP,
+    fire_disp: float = FIRE_DISP,
+    noise_k: float = NOISE_K,
     fire_frac: float = FIRE_FRAC,
     sustain: int = SUSTAIN,
     min_line: int = MIN_LINE,
+    min_tracked: int = MIN_TRACKED,
     depth: float = LINE_DEPTH,
     halfwidth: float = LINE_HALFWIDTH,
 ) -> SnapDetection:
     """First frame where a set line fires together; the snap is the last still frame before it.
 
-    A set line = at least `min_line` bodies in the LOS band that were tracked over
-    the trailing `window` frames. It fires when `fire_frac` of them are more than
-    `body_disp` yards from their window mean for `sustain` consecutive frames -
-    simultaneity across bodies is what separates the snap from detection jitter
-    (independent per body), a man in motion or a shift (one or two bodies).
-    Within the fire's window the snap is placed by a flat-then-ramp fit of the
-    line's mean displacement, so rel_frame 0 is the frame the line is still at
-    and moving right after, as on tracking data.
+    A set line = at least `min_line` bodies in the LOS band, tracked over the
+    trailing `window` frames, the frame before the fire. It fires when the line's
+    mean displacement from its window mean jumps past `fire_disp` (or past its own
+    pre-fire noise, mean + `noise_k` sd, on a jittery clip) and stays there for
+    `sustain` frames, with `fire_frac` of the bodies individually past
+    `body_disp`. The mean catches the first 0.1-0.2 s of a pass set, when each
+    lineman has moved only a few tenths of a yard; the per-body share keeps one
+    walking body (a shift, a man in motion) from passing as the line. Once the
+    lines engage their boxes merge, so only `min_tracked` bodies need to remain.
+    The snap is then the last frame before the fire at which the line's mean
+    displacement was still below half the fire threshold, so rel_frame 0 is the
+    frame the line is still at and moving right after, as on tracking data.
     """
     series = snap_series(pos, los, ball_xy, window, body_disp, depth, halfwidth)
     frames = series["frame"].to_numpy()
     moving = series["line_moving"].to_numpy()
+    disp_s = series["line_disp"].to_numpy()
     n_line = series["n_line"].to_numpy()
     by_frame = {f: d for f, d in pos.groupby("frame")} if not pos.empty else {}
 
+    def threshold_noise(k: int) -> float:
+        # noise from a window that ends NOISE_LAG frames back: the frames right
+        # before a candidate may already hold the start of the ramp, and a
+        # threshold estimated on them climbs as fast as the signal
+        prior = disp_s[max(0, k - NOISE_LAG - window) : max(0, k - NOISE_LAG)]
+        prior = prior[np.isfinite(prior)]
+        if len(prior) < 3:
+            return 0.0
+        med = float(np.median(prior))
+        sd = 1.4826 * float(np.median(np.abs(prior - med)))  # robust to one spike
+        return med + noise_k * sd
+
+    def threshold(k: int) -> float:
+        return max(fire_disp, threshold_noise(k))
+
     fire_k = None
-    for k in range(len(series) - sustain + 1):
-        ok = True
-        for m in range(sustain):
-            if n_line[k + m] < min_line or not (moving[k + m] >= fire_frac):
-                ok = False
-                break
-        if ok:
-            fire_k = k
-            break
+    thr = fire_disp
+    for k in range(1, len(series) - sustain + 1):
+        if n_line[k - 1] < min_line:
+            continue
+        thr = threshold(k)
+        run = range(k, k + sustain)
+        if any(n_line[m] < min_tracked or not (disp_s[m] >= thr) for m in run):
+            continue
+        if not np.nanmax(np.r_[moving[k : k + sustain], 0.0]) >= fire_frac:
+            continue
+        fire_k = k
+        break
     if fire_k is None:
         n_max = int(n_line.max()) if len(n_line) else 0
         why = (
             f"no frame with {min_line}+ set line bodies"
             if n_max < min_line
-            else f"the set line never fired together (max moving fraction "
-            f"{np.nanmax(moving) if len(moving) else 0:.2f} < {fire_frac})"
+            else f"the set line never fired together (max mean displacement "
+            f"{np.nanmax(np.r_[disp_s, 0.0]):.2f} yd, max moving share "
+            f"{np.nanmax(np.r_[moving, 0.0]):.2f})"
         )
         return SnapDetection(None, None, "low", 0.0, None, n_max, [why], series)
 
     fire = int(frames[fire_k])
-    # place the snap inside the fire's window with the line set that fired
+    # the snap = the last frame before the fire at which the line was still:
+    # walk back while its mean displacement is above the still level (half the
+    # fire threshold, or the pre-fire noise). A shape fit per body (flat, then a
+    # quadratic ramp) was tried first and placed clip 2 0.4 s early: three or
+    # four points per body cannot carry a shape against tracker noise.
     lw = _line_window(pos, fire, los, window, body_disp, depth, halfwidth, MIN_PRESENCE)
-    span = [f for f in range(fire - 2 * window, fire + sustain) if f in by_frame]
-    if lw is not None and span:
-        # reference = the earliest frames of the span, not the window mean (the
-        # mean already contains the first frames of the ramp). One onset per body,
-        # the snap is their median: a body that was already walking (a shift, a
-        # man in motion) or a lost track is one outlier, not a bias.
-        early = span[: max(1, min(3, len(span) - sustain - 1))]
-        table = np.stack(
-            [by_frame[f].set_index("nfl_id")[["x", "y"]].reindex(lw.ids).to_numpy() for f in span]
-        )  # (frames, bodies, 2)
-        ref_pts = np.nanmean(table[: len(early)], axis=0)  # (bodies, 2)
-        disp = np.hypot(*(table - ref_pts).transpose(2, 0, 1))  # (frames, bodies)
-        present = np.isfinite(disp).mean(axis=0) >= 0.8
-        onsets = [fit_onset(np.nan_to_num(disp[:, k])) for k in np.flatnonzero(present)]
-        if len(onsets) >= 2:
-            snap = span[int(np.median(onsets))]
-        else:
-            mean_disp = np.nan_to_num(np.nanmean(disp, axis=1)) if present.any() else disp[:, 0]
-            snap = span[fit_onset(np.nan_to_num(mean_disp))]
-        snap = min(snap, fire - 1) if fire - 1 in by_frame else snap
-    else:
-        snap = fire - 1
-    snap = int(snap)
+    still_level = max(STILL_SHARE * fire_disp, threshold_noise(fire_k))
+    snap_k = fire_k - 1
+    while snap_k > 0 and np.isfinite(disp_s[snap_k]) and disp_s[snap_k] > still_level:
+        snap_k -= 1
+    snap = int(frames[snap_k])
     t = float(pos.loc[pos["frame"] == snap, "t"].iloc[0]) if snap in by_frame else None
 
-    # confidence: how many bodies, how completely they fired, how still they were before
-    n_at = int(n_line[fire_k])
+    # confidence: how many bodies, how completely they fired, how still they were
+    # before the snap (not before the fire: the fire can lag the snap by several
+    # frames while linemen set, and those frames are already moving)
+    n_at = len(lw.ids) if lw is not None else int(n_line[fire_k - 1])
     frac = float(np.nanmax(moving[fire_k : fire_k + sustain]))
-    pre = series.loc[(series["frame"] < fire) & (series["frame"] >= fire - window), "line_disp"]
-    stillness = 1.0 - min(1.0, float(pre.mean()) / body_disp) if len(pre) else 0.5
+    pre = series.loc[
+        (series["frame"] <= snap) & (series["frame"] > snap - window), "line_disp"
+    ].dropna()
+    stillness = 1.0 - min(1.0, float(pre.mean()) / thr) if len(pre) else 0.5
     terms = [min(1.0, max(0.0, (n_at - 3) / 4.0)), frac, stillness]
     reasons = [
         (
             f"{n_at} bodies set in the LOS band (LOS x={series['los'].iloc[fire_k]:.1f}), "
-            f"{frac:.0%} fired together at frame {fire} ({series['t'].iloc[fire_k]:.1f} s)"
+            f"{frac:.0%} fired together at frame {fire} ({series['t'].iloc[fire_k]:.1f} s), "
+            f"mean displacement {disp_s[fire_k]:.2f} yd past the {thr:.2f} yd threshold"
         ),
-        f"line displacement over the {window * step_s:.1f} s before: {pre.mean():.2f} yd mean"
+        f"line displacement over the {window * step_s:.1f} s up to the snap: "
+        f"{pre.mean():.2f} yd mean"
         if len(pre)
-        else "no still stretch before the fire",
+        else "no still stretch before the snap",
+        f"the fire confirmed {fire - snap} frame(s) after the snap frame",
     ]
     if ball_xy:
         after = series.loc[(series["frame"] >= fire) & (series["frame"] < fire + 5), "ball_disp"]
