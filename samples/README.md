@@ -27,7 +27,17 @@ for this project, not for redistribution.
     --run-calib samples\sf-lar\calibrations\clip2_frame_039_19.50s.calibration.json \
     --imgsz 1920 --los 69.9 --ball-y 23.9 --offense right --pre 16 --run 39 --run-deep 12 --yes --no-log
 
-# tracked reads (10 Hz canonical tracks, rotator named, movement features)
+# snap detection from the line firing (prints the per-frame series and the call)
+.venv\Scripts\python scripts\detect_snap.py samples\sf-lar\clip1.mp4 \
+    --calib samples\sf-lar\calibrations\clip1_frame_010_05.00s.calibration.json --anchor 5.0 \
+    --start 4.0 --end 7.5 --los 49.9 --imgsz 1920 --expect 5.5
+# clip 2: the snap is between the 8.0 s pre-snap frame and the 9.5 s freeze; never located by hand
+.venv\Scripts\python scripts\detect_snap.py samples\sf-lar\clip2.mp4 \
+    --calib samples\sf-lar\calibrations\clip2_frame_016_08.00s.calibration.json --anchor 8.0 \
+    --start 6.0 --end 9.6 --los 69.9 --imgsz 1920
+
+# tracked reads (10 Hz canonical tracks, rotator named, movement features);
+# --snap is optional now: without it the detector's frame is used, with it the offset is printed
 .venv\Scripts\python scripts\track_clip.py samples\sf-lar\clip1.mp4 \
     --calib samples\sf-lar\calibrations\clip1_frame_010_05.00s.calibration.json --anchor 5.0 \
     --keyframe 8.0=samples\sf-lar\calibrations\clip1_frame_016_08.00s.calibration.json \
