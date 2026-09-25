@@ -75,8 +75,12 @@ def test_referee_behind_the_offense_is_ignored_when_flagged():
     lab = np.append(lab, OFF)
     flagged = np.append(isp, False)
     assert infer_formation(xy, lab, flagged).offense == "right"
-    unflagged = np.append(isp, True)
-    assert infer_formation(xy, lab, unflagged).offense != "right"  # why the flag matters
+    # unflagged (the striped-shirt check misses small officials), the second-deepest
+    # body still reads the side, at low confidence and with the reason given
+    unflagged = infer_formation(xy, lab, np.append(isp, True))
+    assert unflagged.offense == "right" and unflagged.offense_confidence == "low"
+    assert "official" in unflagged.reasons[0]
+    assert unflagged.suspect_official == len(xy) - 1  # the referee, set aside
 
 
 def test_shaded_defenders_in_the_white_cluster_do_not_break_the_team_split():

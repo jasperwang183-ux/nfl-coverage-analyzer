@@ -10,6 +10,7 @@ from nfl_coverage.vision.track import (
     SideAssignment,
     TrackedFrame,
     canonical_tracks,
+    cap_sides,
     chain_calibrations,
 )
 
@@ -96,3 +97,16 @@ def test_line_players_and_unknown_ids_are_dropped():
     assert tr["nfl_id"].tolist() == [1]
     with pytest.raises(ValueError, match="no tracked players"):
         canonical_tracks([fr], [calib], SideAssignment({}, set(), 0, 0, None), 0, "left")
+
+
+def test_cap_sides_moves_the_surplus_back_across_the_line():
+    los = 50.0  # offense on the right (x > 50)
+    x = np.array([60.0] * 8 + [50.8, 51.5] + [40.0] * 9 + [49.8, 49.0, 50.4])
+    sides = np.array(["Offense"] * 10 + ["Defense"] * 12)  # 12 defense, 10 offense
+    capped = cap_sides(sides, x, los, "right")
+    assert (capped == "Defense").sum() == 11 and (capped == "Offense").sum() == 11
+    # the defense body standing on the offense's side of the ball (x=50.4) moved
+    assert capped[-1] == "Offense"
+    # nothing moves when both sides are legal
+    ok = np.array(["Offense"] * 11 + ["Defense"] * 11)
+    assert (cap_sides(ok, x[:22], los, "right") == ok).all()
