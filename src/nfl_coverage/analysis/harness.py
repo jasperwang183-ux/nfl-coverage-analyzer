@@ -95,6 +95,19 @@ MOF_CLOSED_BY_COVERAGE = {
     "PREVENT": None,
 }
 
+# Deep defenders each played coverage puts on the field: separates quarters from Cover 3,
+# which the MOF state alone cannot (both are "middle covered" or not by different means).
+DEEP_COUNT_BY_COVERAGE = {
+    "COVER_0_MAN": None,
+    "COVER_1_MAN": 1,
+    "COVER_2_MAN": 2,
+    "COVER_2_ZONE": 2,
+    "COVER_3_ZONE": 3,
+    "COVER_4_ZONE": 4,
+    "COVER_6_ZONE": 3,  # quarters to one side, half to the other
+    "PREVENT": None,
+}
+
 
 def run_shell_accuracy(table: pd.DataFrame, label_col: str = "coverage_type") -> pd.DataFrame:
     """How often the post-snap shell read agrees with the coverage label's MOF state.
