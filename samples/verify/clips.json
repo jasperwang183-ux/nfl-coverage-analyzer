@@ -1,0 +1,189 @@
+{
+ "about": "Clips for scripts/verify.py film. Each names one painted yard line on its calibration frame (named_x = the line's pixel x at mid-frame, from `verify.py add`), the play window, optional `given` values a person would type on the page, and optional `expect` facts a person knows. Videos stay outside git; paths are absolute or relative to the repo root.",
+ "clips": [
+  {
+   "id": "sf-lar-clip1",
+   "video": "samples/sf-lar/clip1.mp4",
+   "calib": {
+    "t": 5.0,
+    "named_x": 330,
+    "painted": 25,
+    "going_up": true
+   },
+   "window": [
+    4.5,
+    9.0
+   ],
+   "source": "49ers @ Rams, Melbourne; analyst call in samples/README.md",
+   "expect": {
+    "offense": "right",
+    "snap_t": 5.5,
+    "los": 49.2,
+    "shown_n_deep": 2,
+    "shown_mof_closed": false,
+    "played_n_deep": 4,
+    "played_mof_closed": false
+   }
+  },
+  {
+   "id": "sf-lar-clip2",
+   "video": "samples/sf-lar/clip2.mp4",
+   "calib": {
+    "t": 16.0,
+    "named_x": 501,
+    "painted": 45,
+    "going_up": true
+   },
+   "window": [
+    16.0,
+    20.0
+   ],
+   "given": {
+    "snap_t": 16.4,
+    "los": 69.9,
+    "offense": "right",
+    "ball_y": 23.9
+   },
+   "source": "49ers @ Rams; tracking starts after a post-snap freeze, so the snap is given",
+   "expect": {
+    "played_mof_closed": true,
+    "played_n_deep": 3
+   }
+  },
+  {
+   "id": "mia-lac-wide",
+   "video": "C:/Users/jaspe/Videos/Captures/2023 Wk1 All 22 Dolphins Chargers Coaches Film - YouTube - Google Chrome 2026-09-25 13-27-07.mp4",
+   "calib": {
+    "t": 14.0,
+    "named_x": 308,
+    "painted": 0,
+    "going_up": true
+   },
+   "window": [
+    14.0,
+    18.0
+   ],
+   "source": "Dolphins @ Chargers 2023 wk 1; calibrated inside the window"
+  },
+  {
+   "id": "mia-lac-carry",
+   "video": "C:/Users/jaspe/Videos/Captures/2023 Wk1 All 22 Dolphins Chargers Coaches Film - YouTube - Google Chrome 2026-09-25 13-27-07.mp4",
+   "calib": {
+    "t": 5.0,
+    "named_x": 290,
+    "painted": 0,
+    "going_up": true
+   },
+   "window": [
+    12.0,
+    17.0
+   ],
+   "source": "same play, calibrated on the pre-snap still at 5 s and carried into the window"
+  },
+  {
+   "id": "cap-mia-lac-1326",
+   "video": "C:/Users/jaspe/Videos/Captures/2023 Wk1 All 22 Dolphins Chargers Coaches Film - YouTube - Google Chrome 2026-09-25 13-26-47.mp4",
+   "calib": {
+    "t": 4.03,
+    "named_x": 1101,
+    "painted": 10,
+    "going_up": true
+   },
+   "window": [
+    3.03,
+    8.53
+   ],
+   "source": "naming read off the painted numbers by Claude 2026-09-26 (confirm); window = the page's default from the suggested frame, not checked"
+  },
+  {
+   "id": "cap-sf-lar-1529",
+   "video": "C:/Users/jaspe/Videos/Captures/49ers Playbook_ SF absolutely DOMINATED the Rams - YouTube - Google Chrome 2026-09-23 15-29-29.mp4",
+   "calib": {
+    "t": 4.02,
+    "named_x": 600,
+    "painted": 40,
+    "going_up": false
+   },
+   "window": [
+    3.02,
+    8.52
+   ],
+   "source": "naming read off the painted numbers by Claude 2026-09-26 (confirm); window = the page's default from the suggested frame, not checked"
+  },
+  {
+   "id": "cap-sf-lar-1530",
+   "video": "C:/Users/jaspe/Videos/Captures/49ers Playbook_ SF absolutely DOMINATED the Rams - YouTube - Google Chrome 2026-09-23 15-30-18.mp4",
+   "calib": {
+    "t": 3.03,
+    "named_x": 872,
+    "painted": 30,
+    "going_up": true
+   },
+   "window": [
+    2.03,
+    7.53
+   ],
+   "source": "naming read off the painted numbers by Claude 2026-09-26 (confirm); window = the page's default from the suggested frame, not checked"
+  },
+  {
+   "id": "cap-sf-lar-1531a",
+   "video": "C:/Users/jaspe/Videos/Captures/49ers Playbook_ SF absolutely DOMINATED the Rams - YouTube - Google Chrome 2026-09-23 15-31-25.mp4",
+   "calib": {
+    "t": 1.03,
+    "named_x": 305,
+    "painted": 30,
+    "going_up": false
+   },
+   "window": [
+    0.03,
+    5.53
+   ],
+   "source": "naming read off the painted numbers by Claude 2026-09-26 (confirm); window = the page's default from the suggested frame, not checked"
+  },
+  {
+   "id": "cap-sf-lar-1531b",
+   "video": "C:/Users/jaspe/Videos/Captures/49ers Playbook_ SF absolutely DOMINATED the Rams - YouTube - Google Chrome 2026-09-23 15-31-51.mp4",
+   "calib": {
+    "t": 3.01,
+    "named_x": 1118,
+    "painted": 40,
+    "going_up": false
+   },
+   "window": [
+    2.01,
+    7.51
+   ],
+   "source": "naming read off the painted numbers by Claude 2026-09-26 (confirm); window = the page's default from the suggested frame, not checked"
+  },
+  {
+   "id": "cap-sf-lar-1532",
+   "video": "C:/Users/jaspe/Videos/Captures/49ers Playbook_ SF absolutely DOMINATED the Rams - YouTube - Google Chrome 2026-09-23 15-32-50.mp4",
+   "calib": {
+    "t": 4.03,
+    "named_x": 700,
+    "painted": 40,
+    "going_up": false
+   },
+   "window": [
+    3.03,
+    8.53
+   ],
+   "source": "naming read off the painted numbers by Claude 2026-09-26 (confirm); window = the page's default from the suggested frame, not checked"
+  },
+  {
+   "id": "cap-sf-lar-1533",
+   "video": "C:/Users/jaspe/Videos/Captures/49ers Playbook_ SF absolutely DOMINATED the Rams - YouTube - Google Chrome 2026-09-23 15-33-31.mp4",
+   "calib": {
+    "t": 28.03,
+    "named_x": 603,
+    "painted": 30,
+    "going_up": false
+   },
+   "window": [
+    27.03,
+    32.53
+   ],
+   "source": "naming read off the painted numbers by Claude 2026-09-26 (confirm); window = the page's default from the suggested frame, not checked"
+  }
+ ]
+}

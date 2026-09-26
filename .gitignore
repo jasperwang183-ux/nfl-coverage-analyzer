@@ -4,6 +4,7 @@ data/processed/
 data/stills/
 data/clips/
 data/web/
+data/verify/
 *.csv
 *.parquet
 *.zip
