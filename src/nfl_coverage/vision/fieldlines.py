@@ -858,6 +858,47 @@ def search_calibration(
     return CalibrationSearch(best, settings, tried, len(fits), rows, warning)
 
 
+def n_number_edges(a: AutoCalibration) -> int:
+    """How many painted-number edges a fit used as landmarks."""
+    return sum(int(n.split()[0]) for n in a.notes if n.endswith("number edges"))
+
+
+SHIFT_EDGE_MARGIN = 4  # number edges the 5-yd-shifted naming must win by to warn
+
+
+def five_yard_shift_warning(
+    image: np.ndarray,
+    yards: list[float | None],
+    search: CalibrationSearch,
+    min_length: int = 250,
+    votes: int = 120,
+    marks: FieldMarks | None = None,
+) -> str | None:
+    """Warn when the painted numbers prefer the naming shifted by 5 yd.
+
+    The fit cannot tell a 5-yd mislabel (every line shifted one place still fits);
+    the painted numbers can - they sit on the 10s only. Refit with the labels
+    shifted by 5 yd and warn when that fit finds clearly more number edges.
+    """
+    shifted = [None if y is None else y + 5 for y in yards]
+    if max(y for y in shifted if y is not None) > 110:
+        shifted = [None if y is None else y - 10 for y in shifted]
+    try:
+        alt = search_calibration(image, shifted, None, min_length, votes, marks)
+    except ValueError:
+        return None
+    mine, theirs = n_number_edges(search.best), n_number_edges(alt.best)
+    if theirs < mine + SHIFT_EDGE_MARGIN:
+        return None
+    tens = [k + 1 for k, y in enumerate(shifted) if y is not None and round(y) % 10 == 0]
+    return (
+        f"The painted numbers sit on line{'s' if len(tens) > 1 else ''} "
+        f"{', '.join(map(str, tens))} (the 10-yard lines), not on the lines your "
+        f"naming makes the 10s ({theirs} number edges found that way, {mine} "
+        "yours). Check the painted number you entered."
+    )
+
+
 def draw_field_grid(
     image: np.ndarray, calib: FieldCalibration, color=(0, 255, 255), thickness: int = 2
 ) -> np.ndarray:

@@ -338,6 +338,8 @@ def create_app(data_dir: Path | None = None, model_path: Path | None = None) -> 
             draw_field_grid,
             field_x_for_lines,
             find_marks,
+            five_yard_shift_warning,
+            n_number_edges,
             painted_from_field_x,
             search_calibration,
         )
@@ -368,32 +370,7 @@ def create_app(data_dir: Path | None = None, model_path: Path | None = None) -> 
         except ValueError as e:
             raise HTTPException(422, str(e)) from e
         best = search.best
-
-        def n_number_edges(a) -> int:
-            return sum(int(n.split()[0]) for n in a.notes if n.endswith("number edges"))
-
-        # The fit cannot tell a 5-yd mislabel (every line shifted one place still fits);
-        # the painted numbers can - they sit on the 10s only. Compare with the labeling
-        # shifted by 5 yd and warn when the numbers clearly prefer it.
-        warning = None
-        shifted = [None if y is None else y + 5 for y in yards]
-        if max(y for y in shifted if y is not None) > 110:
-            shifted = [None if y is None else y - 10 for y in shifted]
-        try:
-            alt = search_calibration(img, shifted, None, req.min_length, req.votes, marks)
-            mine, theirs = n_number_edges(best), n_number_edges(alt.best)
-            if theirs >= mine + 4:
-                tens = [
-                    k + 1 for k, y in enumerate(shifted) if y is not None and round(y) % 10 == 0
-                ]
-                warning = (
-                    f"The painted numbers sit on line{'s' if len(tens) > 1 else ''} "
-                    f"{', '.join(map(str, tens))} (the 10-yard lines), not on the lines your "
-                    f"naming makes the 10s ({theirs} number edges found that way, {mine} "
-                    "yours). Check the painted number you entered."
-                )
-        except ValueError:
-            pass
+        warning = five_yard_shift_warning(img, yards, search, req.min_length, req.votes, marks)
         best.calibration.save(d / "calibration.json")
         grid = draw_field_grid(img, best.calibration)
         for x, y in best.pixel:  # the landmarks the fit used
