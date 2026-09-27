@@ -12,7 +12,11 @@ from nfl_coverage.vision.fieldlines import field_x_from_painted, painted_from_fi
 from nfl_coverage.vision.homography import FieldCalibration
 from nfl_coverage.vision.pipeline import TrackedClip
 from nfl_coverage.vision.track import TrackedFrame
-from nfl_coverage.web.app import create_app, suggest_calibration_frame
+from nfl_coverage.web.app import (
+    calibration_candidates,
+    create_app,
+    suggest_calibration_frame,
+)
 
 
 def _video(path, seconds=4.0, fps=10, still_until=2.0, size=(320, 180), spacing=50, width=2):
@@ -92,10 +96,40 @@ def test_suggested_frame_is_the_last_still_before_motion():
     assert suggest_calibration_frame(samples) == 3
 
 
+def test_naming_tries_the_suggested_frame_then_the_nearest_still_ones():
+    scores = [0, 0.1, 5.0, 0.2, 0.1, 0.3, 7.0, 9.0, 0.1]
+    samples = [{"i": i, "t": i * 0.5, "score": s} for i, s in enumerate(scores)]
+    assert suggest_calibration_frame(samples) == 5
+    # 2 moved (a camera jolt), 6 on is the play: neither is tried
+    assert calibration_candidates(samples, 5) == [5, 4, 3, 1, 0]
+
+
+def test_naming_without_a_play_in_motion_tries_every_still_frame():
+    samples = [{"i": i, "t": i * 0.5, "score": 0.1 * i} for i in range(4)]
+    assert calibration_candidates(samples, 2) == [2, 1, 3, 0]
+
+
 @pytest.fixture()
 def client(tmp_path):
-    app = create_app(data_dir=tmp_path / "web", model_path=tmp_path / "none.joblib")
+    app = create_app(data_dir=tmp_path / "web", model_path=tmp_path / "none.joblib", auto=False)
     return TestClient(app)
+
+
+def _upload(client, tmp_path) -> str:
+    video = _video(tmp_path / "play.mp4")
+    with video.open("rb") as fh:
+        r = client.post("/api/clips", files={"file": ("play.mp4", fh, "video/mp4")})
+    assert r.status_code == 200, r.text
+    return r.json()["id"]
+
+
+def _wait(client, cid) -> dict:
+    for _ in range(400):
+        meta = client.get(f"/api/clips/{cid}").json()
+        if meta["stage"] not in ("queued", "calibrating", "tracking", "reading"):
+            return meta
+        time.sleep(0.05)
+    raise TimeoutError(meta["stage"])
 
 
 def test_upload_samples_frames_and_suggests_the_pre_snap_look(client, tmp_path):
@@ -194,6 +228,7 @@ def test_a_clip_without_a_snap_asks_for_one(client, tmp_path, monkeypatch):
     clip.calibrations[0].save(d / "calibration.json")
     meta = json.loads((d / "meta.json").read_text())
     meta["calibration"] = {"t": 0.5}
+    meta["stage"] = "calibrated"
     (d / "meta.json").write_text(json.dumps(meta))
     monkeypatch.setattr("nfl_coverage.vision.pipeline.track_frames", lambda *a, **k: clip)
     r = client.post(f"/api/clips/{cid}/analyze", json={"start": 0.0, "end": 2.9})
@@ -206,3 +241,139 @@ def test_a_clip_without_a_snap_asks_for_one(client, tmp_path, monkeypatch):
     assert meta["stage"] == "needs_input"
     assert meta["needs"] == "snap"
     assert "no snap found" in meta["message"]
+
+
+# ------------------------------------------------------------- the automatic path
+
+
+def test_an_upload_that_cannot_be_named_asks_a_person(tmp_path, monkeypatch):
+    def no_fit(image, marks):
+        raise ValueError("only 1 yard lines found")
+
+    monkeypatch.setattr("nfl_coverage.vision.fieldlines.auto_name", no_fit)
+    client = TestClient(create_app(data_dir=tmp_path / "web", model_path=tmp_path / "x.joblib"))
+    cid = _upload(client, tmp_path)
+    meta = _wait(client, cid)
+    assert meta["stage"] == "needs_input" and meta["needs"] == "calibration"
+    assert "only 1 yard lines found" in meta["message"]
+    assert "calibration" not in meta
+    # the manual naming is the way on from here
+    r = client.post(f"/api/clips/{cid}/analyze", json={"start": 0.5, "end": 3.5})
+    assert r.status_code == 409 and "calibrate" in r.json()["detail"]
+
+
+def test_an_upload_runs_on_to_tracking_and_reading_by_itself(tmp_path, monkeypatch):
+    clip = _still_clip()
+
+    def named(d, meta):
+        clip.calibrations[0].save(d / "calibration.json")
+        return {"t": 0.5, "naming": "auto", "edge_margin": 3}, ["0.0 s: no fit"]
+
+    monkeypatch.setattr("nfl_coverage.web.app.auto_calibrate", named)
+    monkeypatch.setattr("nfl_coverage.vision.pipeline.track_frames", lambda *a, **k: clip)
+    client = TestClient(create_app(data_dir=tmp_path / "web", model_path=tmp_path / "x.joblib"))
+    cid = _upload(client, tmp_path)
+    meta = _wait(client, cid)
+    assert meta["calibration"]["naming"] == "auto"
+    assert meta["stage"] == "needs_input" and meta["needs"] == "snap"  # the still clip has none
+
+
+def test_a_stage_the_machine_does_not_allow_is_refused(client, tmp_path):
+    from fastapi import HTTPException
+
+    from nfl_coverage.web.app import ClipStore
+
+    cid = _upload(client, tmp_path)
+    store = ClipStore(tmp_path / "web")
+    with pytest.raises(HTTPException):
+        store.advance(cid, "done")  # uploaded -> done skips the whole job
+    store.advance(cid, "calibrating")
+    with pytest.raises(ValueError):
+        store.advance(cid, "needs_input")  # without saying what it needs
+    meta = store.advance(cid, "needs_input", needs="calibration", message="name a line")
+    assert meta["stage"] == "needs_input" and meta["needs"] == "calibration"
+    meta = store.advance(cid, "calibrated")
+    assert meta["needs"] is None and meta["message"] == ""
+
+
+# ------------------------------------------------------------- corrections
+
+
+def _with_result(client, tmp_path) -> str:
+    cid = _upload(client, tmp_path)
+    shown = {"shell": "2-high MOF-open", "confidence": "high"}
+    played = {"shell": "4-deep", "confidence": "medium"}
+    result = {
+        "snap": {"t": 5.5},
+        "played_frame": {"t": 7.7},
+        "report": {"shown": shown, "played": played},
+    }
+    (tmp_path / "web" / cid / "result.json").write_text(json.dumps(result))
+    return cid
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"phase": "during", "correct": True},
+        {"phase": "pre"},
+        {"phase": "pre", "correct": False},  # wrong, but not what it should have been
+        {"phase": "pre", "correct": False, "call": "   "},
+        {"phase": "pre", "correct": False, "call": "x" * 61},
+        {"phase": "pre", "correct": True, "extra": 1},
+    ],
+)
+def test_a_malformed_correction_is_refused(client, tmp_path, monkeypatch, body):
+    monkeypatch.setattr("nfl_coverage.web.app.CORRECTIONS", tmp_path / "c.jsonl")
+    cid = _with_result(client, tmp_path)
+    assert client.post(f"/api/clips/{cid}/correction", json=body).status_code == 422
+    assert not (tmp_path / "c.jsonl").exists()
+
+
+def test_a_correction_before_any_read_is_refused(client, tmp_path):
+    cid = _upload(client, tmp_path)
+    r = client.post(f"/api/clips/{cid}/correction", json={"phase": "pre", "correct": True})
+    assert r.status_code == 409
+
+
+def test_corrections_are_logged_against_the_model_call(client, tmp_path, monkeypatch):
+    log = tmp_path / "c.jsonl"
+    monkeypatch.setattr("nfl_coverage.web.app.CORRECTIONS", log)
+    cid = _with_result(client, tmp_path)
+    body = {"phase": "post", "correct": False, "call": "COVER_6_ZONE", "note": " boundary "}
+    r = client.post(f"/api/clips/{cid}/correction", json=body)
+    assert r.status_code == 200, r.text
+    r = client.post(f"/api/clips/{cid}/correction", json={"phase": "pre", "correct": True})
+    assert r.status_code == 200, r.text
+    recs = [json.loads(line) for line in log.read_text().splitlines()]
+    keys = {"logged", "clip", "clip_id", "phase", "correct", "call", "note"}
+    keys |= {"model_call", "model_confidence", "snap_t", "read_t"}
+    assert [set(rec) for rec in recs] == [keys, keys]
+    post, pre = recs
+    assert post["clip"] == "play.mp4" and post["clip_id"] == cid
+    assert (post["phase"], post["correct"], post["call"], post["note"]) == (
+        "post",
+        False,
+        "COVER_6_ZONE",
+        "boundary",
+    )
+    assert (post["model_call"], post["model_confidence"], post["read_t"]) == (
+        "4-deep",
+        "medium",
+        7.7,
+    )
+    assert (pre["call"], pre["model_call"], pre["read_t"], pre["snap_t"]) == (
+        "2-high MOF-open",
+        "2-high MOF-open",
+        5.5,
+        5.5,
+    )
+    kept = client.get(f"/api/clips/{cid}").json()["corrections"]
+    assert kept["post"]["call"] == "COVER_6_ZONE" and kept["pre"]["correct"] is True
+
+
+def test_the_calls_a_person_may_pick(client):
+    calls = client.get("/api/calls").json()
+    assert "2-high MOF-open" in calls["shells"] and "4-deep" in calls["shells"]
+    assert calls["variants"] == []  # no model bundle in this app
+    assert calls["other"] == "Other"
