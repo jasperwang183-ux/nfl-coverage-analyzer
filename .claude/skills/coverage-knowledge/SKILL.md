@@ -142,11 +142,26 @@ walking out onto the slot pre-snap points to man or match.
 
 ## What the project's film checks taught
 
-- **Asymmetric two-high reads as closed.** On 1326 one safety sat 3.4 yd off the middle
+- **Asymmetric two-high on the MOF edge.** On 1326 one safety sat 3.4 yd off the middle
   against a 3.5 yd `MOF_HALFWIDTH` (`analysis/shell.py`) with the other 8.7 yd out, so the
-  reader called a post safety plus a half; both then held their halves at 13-15 yd (tell 1).
-  The model and the analyst said straight Cover 2. The disguise card's "rotated" verdict was
-  a false positive.
+  reader called a post safety plus a half; both then held their halves at 13-15 yd (tell 1)
+  and the analyst confirmed Cover 2 zone. The analyst also marked the shell rows (2-high
+  closed, then 1-high closed) correct, so whether the "rotated" disguise card was wrong is
+  unresolved.
+- **The 9 yd deep line is an edge, not a bug.** A defender at 8.9 yd split 9.3 yd off the
+  middle was a high safety (analyst: three-high look, 2-Man played); one at 8.8 yd over the
+  middle was not (1533, analyst: 0-high). Counting side defenders at 7-9 or 8-9 yd, or
+  lowering the line to 8 yd, all cut shown-MOF agreement with the labels on weeks 1-4 of both
+  seasons (67.7% to 63.5-66.1%, 7,340 plays). Keep 9 yd; a defender on the line lowers the
+  confidence and says so, which is the right response.
+- **Man from a zone look.** 15-34-46 (analyst label): three-high zone look, 2-Man played,
+  press on the single receiver, off/squat elsewhere, RB stayed in and a free underneath
+  defender. On the tracks the press corner stays 1-2 yd from his man and both safeties hold
+  halves at 14-16 yd; the off corner's growing cushion read like zone (tell 4 needs the
+  routes to declare, and 2.5 s of tracks is short). The model said Cover 2 zone.
+- **Officials at the LOS get sided.** Two static bodies about 23 yd out on each sideline
+  at LOS depth (the head linesman and line judge) were tracked as defenders on 15-34-46 and
+  became the "widest defenders" in the reasons.
 - **Crops remove the corners**, so a safety becomes the "widest defender" and must clear
   `CORNER_DEEP_DEPTH` (12 yd, `analysis/report.py`) to count as deep.
 - **Tracker duplicates** can make one deep player two (1533: two "deep" ids 2.4 yd apart
