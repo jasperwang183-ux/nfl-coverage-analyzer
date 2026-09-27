@@ -261,12 +261,10 @@ def tuning_weeks(dataset: str) -> list[int]:
 # ------------------------------------------------------------------ variant model
 
 
-def variant_model(features: pd.DataFrame | None = None) -> dict:
-    """The snap-only variant model retrained without the holdout weeks, scored on them.
-
-    The saved `still_shown.joblib` is refit on every labeled play (holdout included),
-    so it cannot be scored honestly; this retrains the same recipe on the rest.
-    """
+def _variant_holdout_proba(
+    features: pd.DataFrame | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray]:
+    """Fit the snap-only recipe off the holdout: (train, test, classes, test proba)."""
     from sklearn.ensemble import HistGradientBoostingClassifier  # deferred: slow import
 
     table = features if features is not None else pd.read_parquet(FEATURES_PATH)
@@ -280,11 +278,20 @@ def variant_model(features: pd.DataFrame | None = None) -> dict:
     cols = sorted(c for c in table.columns if c.startswith("snap_"))
     model = HistGradientBoostingClassifier(max_iter=300, random_state=0)
     model.fit(train[cols], train["coverage_type"])
-    proba = model.predict_proba(test[cols])
+    return train, test, model.classes_, model.predict_proba(test[cols])
+
+
+def variant_model(features: pd.DataFrame | None = None) -> dict:
+    """The snap-only variant model retrained without the holdout weeks, scored on them.
+
+    The saved `still_shown.joblib` is refit on every labeled play (holdout included),
+    so it cannot be scored honestly; this retrains the same recipe on the rest.
+    """
+    train, test, classes, proba = _variant_holdout_proba(features)
     order = np.argsort(-proba, axis=1)
     truth = test["coverage_type"].to_numpy()
-    top1 = model.classes_[order[:, 0]] == truth
-    top2 = top1 | (model.classes_[order[:, 1]] == truth)
+    top1 = classes[order[:, 0]] == truth
+    top2 = top1 | (classes[order[:, 1]] == truth)
     out = {
         "n_train": len(train),
         "n": len(test),
@@ -296,6 +303,107 @@ def variant_model(features: pd.DataFrame | None = None) -> dict:
         m = (test["dataset"] == ds).to_numpy()
         out[f"top1_{ds}"] = _rate(pd.Series(top1[m], dtype=float))
     return out
+
+
+SEQUENCE_MODEL = "sequence_v1.pt"
+
+
+def _topk(proba: np.ndarray, classes: np.ndarray, truth: np.ndarray, k: int) -> np.ndarray:
+    top = np.argsort(-proba, axis=1)[:, :k]
+    return (classes[top] == truth[:, None]).any(axis=1)
+
+
+def sequence_model(frames_by_ds: dict[str, pd.DataFrame], name: str = SEQUENCE_MODEL) -> dict:
+    """The saved two-head sequence model (trained off the holdout) on the holdout plays.
+
+    Parts: `all` (pre-snap head, full-play head, and the snap-only variant model
+    refit off the holdout, all on the same plays, with the majority class),
+    `per_class` (n and top-1 per true class), `heads` (how often the two heads
+    disagree and who is right then). Needs `models/<name>` from train_sequence.py.
+    """
+    import torch  # deferred: heavy import, only this check needs it
+
+    from nfl_coverage.config import MODELS_DIR
+    from nfl_coverage.models.sequence import featurize, load, play_tensors, read_indices
+
+    path = MODELS_DIR / name
+    if not path.exists():
+        return {"all": {"n": 0, "note": f"no {path.name}; run scripts/train_sequence.py"}}
+    bundle = load(path, "cuda" if torch.cuda.is_available() else "cpu")
+    trained_off = bundle.meta.get("holdout_weeks")
+    if trained_off != HOLDOUT:
+        raise ValueError(f"{path.name} was not trained off this holdout: {trained_off}")
+    classes = np.array(bundle.classes)
+    dev = next(bundle.model.parameters()).device
+    keys, pv, pp = [], [], []
+    for frames in frames_by_ds.values():
+        t = play_tensors(frames)
+        ok = ~np.isnan(t["ref"]).any(axis=1) & t["keys"]["coverage_type"].isin(classes).to_numpy()
+        keys.append(t["keys"][ok])
+        idx = np.flatnonzero(ok)
+        for s in range(0, len(idx), 512):
+            b = idx[s : s + 512]
+            raw, mask, ref = (torch.from_numpy(t[k][b]).to(dev) for k in ("raw", "mask", "ref"))
+            with torch.no_grad():
+                lv, _ = bundle.model(featurize(raw, mask, ref), mask)
+            last, pre = read_indices(mask)
+            r = torch.arange(len(b), device=dev)
+            pv.append(torch.softmax(lv[r, last].float(), -1).cpu().numpy())
+            pp.append(torch.softmax(lv[r, pre].float(), -1).cpu().numpy())
+    plays = pd.concat(keys, ignore_index=True)
+    full, pre = np.concatenate(pv), np.concatenate(pp)
+    truth = plays["coverage_type"].to_numpy()
+
+    _, test, v_classes, v_proba = _variant_holdout_proba()
+    v = pd.DataFrame(v_proba, columns=v_classes).assign(**{k: test[k].to_numpy() for k in KEYS})
+    v = plays[KEYS].merge(v, on=KEYS, how="left")
+    has_v = v[list(v_classes)].notna().all(axis=1).to_numpy()
+    v_proba = v[list(v_classes)].to_numpy()
+
+    res: dict[str, dict] = {"all": {}, "per_class": {}, "heads": {}}
+    a = res["all"]
+    a["n"] = len(plays)
+    a["majority"] = round(float(pd.Series(truth).value_counts(normalize=True).iloc[0]), 4)
+    hits = {}
+    for tag, proba, cls, sel in (
+        ("pre", pre, classes, slice(None)),
+        ("full", full, classes, slice(None)),
+        ("variant", v_proba[has_v], v_classes, has_v),
+    ):
+        for k in (1, 2, 3):
+            h = _topk(proba, cls, truth[sel], k)
+            a[f"{tag}_top{k}"] = _rate(pd.Series(h, dtype=float))
+            if k == 1:
+                hits[tag] = h
+        for ds in HOLDOUT:
+            m = plays["dataset"].to_numpy()[sel] == ds
+            a[f"{tag}_top1_{ds}"] = _rate(pd.Series(hits[tag][m], dtype=float))
+    a["n_variant"] = int(has_v.sum())
+    for c in classes:
+        m = truth == c
+        res["per_class"][c] = {
+            "n": int(m.sum()),
+            "pre_top1": _rate(pd.Series(hits["pre"][m], dtype=float)),
+            "full_top1": _rate(pd.Series(hits["full"][m], dtype=float)),
+            "variant_top1": _rate(pd.Series(hits["variant"][m[has_v]], dtype=float)),
+        }
+    # disguise-shaped: the pre-snap head's call differs from the full-play head's
+    pre_c, full_c = classes[pre.argmax(1)], classes[full.argmax(1)]
+    differ = pre_c != full_c
+    conf = pre.max(1) >= 0.6
+    h = res["heads"]
+    h["n"] = len(plays)
+    h["differ_rate"] = _rate(pd.Series(differ, dtype=float))
+    h["differ_full_right"] = _rate(pd.Series(hits["full"][differ], dtype=float))
+    h["differ_pre_right"] = _rate(pd.Series(hits["pre"][differ], dtype=float))
+    h["agree_right"] = _rate(pd.Series(hits["full"][~differ], dtype=float))
+    h["n_confident_pre"] = int(conf.sum())
+    h["confident_pre_differ_rate"] = _rate(pd.Series(differ[conf], dtype=float))
+    h["confident_pre_differ_full_right"] = _rate(
+        pd.Series(hits["full"][differ & conf], dtype=float)
+    )
+    h["n_confident_pre_differ"] = int((differ & conf).sum())
+    return res
 
 
 # ------------------------------------------------------------------ disguise
@@ -319,7 +427,7 @@ def disguise_hand_labels(frames_by_ds: dict[str, pd.DataFrame]) -> dict:
 # ------------------------------------------------------------------ run
 
 
-CHECKS = ("formation", "shell", "film_read", "variant", "disguise")
+CHECKS = ("formation", "shell", "film_read", "variant", "disguise", "sequence")
 
 
 def run_holdout(
@@ -331,7 +439,7 @@ def run_holdout(
     """Every requested check on the frozen holdout; {check: {dataset|all: metrics}}."""
     results: dict[str, dict] = {c: {} for c in checks}
     frames_by_ds: dict[str, pd.DataFrame] = {}
-    needs_frames = {"formation", "shell", "film_read", "disguise"} & set(checks)
+    needs_frames = {"formation", "shell", "film_read", "disguise", "sequence"} & set(checks)
     for ds in datasets if needs_frames else ():
         log(f"loading {ds} holdout weeks {HOLDOUT[ds]}")
         frames_by_ds[ds] = load_holdout_frames(ds)
