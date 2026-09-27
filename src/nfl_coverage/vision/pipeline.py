@@ -57,6 +57,7 @@ from nfl_coverage.vision.visibility import check_visibility
 
 SHOWN_DEEP = 9.0  # yd: deep at the snap (the tracking-data threshold)
 RUN_DEEP_FILM = 12.0  # yd: deep in the played read on film (see HANDOFF: under review)
+PLAYED_MAX_S = 5.0  # s after the snap: the latest frame the played read may be taken at
 JPEG_QUALITY = 92
 
 
@@ -474,7 +475,9 @@ def read_tracked(
     tracks = canonical_tracks(frames, calibs, sides, snap_i, offense, step)
     los_c, center = _canonical(offense, los, ball_y)
 
-    declared = declared_frame(tracks, RUN_FRAME, run_deep, center=center, los=los_c)
+    declared = declared_frame(
+        tracks, RUN_FRAME, run_deep, center=center, los=los_c, max_frame=round(PLAYED_MAX_S / step)
+    )
     rot = shell_rotation(
         tracks, run_frame=declared, run_deep_depth=run_deep, center=center, los=los_c
     ).iloc[0]
