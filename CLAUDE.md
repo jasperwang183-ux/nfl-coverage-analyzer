@@ -35,6 +35,7 @@ Every vision stage must output the same canonical frame schema the tracking mode
 - Tracking data is 10 Hz. The 2026 input files have no snap-event column — the snap frame must be inferred (see the bdb-data skill); post-snap window for coverage classification runs from snap to pass release.
 - Coverage classes come from `team_coverage_type` (Cover-1/2/3/4/6 variants); man/zone is the separate `team_coverage_man_zone` label. Normalize the raw values before training.
 - A "disguise" = high-confidence pre-snap prediction ≠ post-snap ground truth (or post-snap prediction).
+- Team tendencies (roadmap 10) are `P(run | shown, team, situation)` tables shrunk toward the league table, never raw per-team counts. Split by season, and key on defensive coordinator when one changed. Build them from training seasons only so the frozen holdout stays clean.
 
 ## Workflow
 
