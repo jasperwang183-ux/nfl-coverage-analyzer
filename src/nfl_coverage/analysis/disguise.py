@@ -145,6 +145,7 @@ def declared_frame(
     min_defenders: int = 5,
     center: float | None = None,
     los: float | None = None,
+    max_frame: int | None = None,
 ) -> int:
     """The rel_frame at which the played shell has declared: most deep defenders.
 
@@ -153,10 +154,12 @@ def declared_frame(
     there. Among frames from `run_frame` to the end that still carry at least
     `min_defenders` tracked defenders (tracks get lost as the camera zooms),
     take the one with the most defenders past `deep_depth`; ties go to the
-    earliest. Film reads use this; the tracking-data harness keeps the fixed
-    2.0 s read it was calibrated on.
+    earliest; none past `max_frame`. Film reads use this; the tracking-data
+    harness keeps the fixed 2.0 s read it was calibrated on.
     """
     last = int(frames["rel_frame"].max())
+    if max_frame is not None:
+        last = min(last, max_frame)
     best_rf, best_n = run_frame, -1
     for rf in range(min(run_frame, last), last + 1):
         d = deep_defenders(frames, rf, deep_depth=deep_depth, center=center, los=los)
