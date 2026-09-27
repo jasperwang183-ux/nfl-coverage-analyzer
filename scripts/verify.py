@@ -71,7 +71,9 @@ def cmd_film(args) -> None:
     results = []
     for c in clips:
         print(f"{c['id']}")
-        r = verify_clip(c, CACHE, bundle, retrack=args.retrack, imgsz=args.imgsz)
+        r = verify_clip(
+            c, CACHE, bundle, retrack=args.retrack, imgsz=args.imgsz, auto_naming=args.auto_naming
+        )
         results.append(r)
         for s in r["stages"]:
             extra = f"  {s['error']}" if s["error"] else ""
@@ -271,6 +273,9 @@ def main() -> None:
     f.add_argument("--tag")
     f.add_argument("--retrack", action="store_true")
     f.add_argument("--imgsz", type=int, default=1920)
+    f.add_argument(
+        "--auto-naming", action="store_true", help="name the yard lines as the page does, unaided"
+    )
     b = sub.add_parser("bdb")
     b.add_argument(
         "--checks", nargs="*", default=["formation", "shell", "film_read", "variant", "disguise"]
