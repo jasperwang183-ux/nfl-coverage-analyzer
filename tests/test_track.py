@@ -12,6 +12,7 @@ from nfl_coverage.vision.track import (
     canonical_tracks,
     cap_sides,
     chain_calibrations,
+    snap_bodies,
 )
 
 
@@ -97,6 +98,48 @@ def test_line_players_and_unknown_ids_are_dropped():
     assert tr["nfl_id"].tolist() == [1]
     with pytest.raises(ValueError, match="no tracked players"):
         canonical_tracks([fr], [calib], SideAssignment({}, set(), 0, 0, None), 0, "left")
+
+
+def test_a_body_within_4_yd_of_a_sideline_at_the_snap_is_not_a_player():
+    # 7.5 px per yard of field width, field y 0 (a sideline) at image row 30
+    px = np.float32([[40, 30], [600, 30], [600, 330], [40, 330]])
+    calib = FieldCalibration.from_points(px, np.float32([[20, 0], [80, 0], [80, 40], [20, 40]]))
+    img = np.full((360, 640, 3), (40, 120, 40), np.uint8)
+    feet = [(150, 15.0), (250, 18.0), (350, 21.0), (150, 25.0), (250, 28.0), (350, 31.0)]
+    feet.append((450, 3.8))  # the line judge as measured on 15-34-46
+    boxes = []
+    for k, (col, y) in enumerate(feet):
+        row = 30 + 7.5 * y
+        box = (col - 8, row - 40, col + 8, row)
+        color = (40, 40, 220) if k in (0, 1, 2, 6) else (220, 60, 40)
+        cv2.rectangle(img, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), color, -1)
+        boxes.append(box)
+    fr = TrackedFrame(0, 0.0, img, np.array(boxes, float), np.arange(1, 8), np.ones(7))
+    b = snap_bodies(fr, calib)
+    assert b.ids[~b.is_player].tolist() == [7]
+
+
+def test_officials_stay_out_when_the_tracker_sees_them_again():
+    from nfl_coverage.vision.track import _sideline_stray
+
+    # ruled out at the snap: marked "-", so a later frame does not re-side the id
+    sides = SideAssignment({1: "Offense", 2: "Defense", 3: "-"}, set(), 1, 0, None)
+    calib = _identity_calib()
+    boxes = np.array([[300, 150, 320, 200], [400, 150, 420, 200], [500, 150, 520, 200]], float)
+    fr = TrackedFrame(
+        1, 0.1, np.zeros((360, 640, 3), np.uint8), boxes, np.array([1, 2, 3]), np.ones(3)
+    )
+    tr = canonical_tracks([fr], [calib], sides, 0, "left")
+    assert sorted(tr["nfl_id"].unique()) == [1, 2]
+    # a new "defender" by the sideline on the offense's side of the ball; the offense's
+    # backfield is x < LOS for offense "left" and x > LOS for "right" (as in cap_sides)
+    los = 50.0
+    assert _sideline_stray(np.array([40.0, 1.9]), "Defense", los, "left")
+    assert _sideline_stray(np.array([60.0, 51.5]), "Defense", los, "right")
+    assert not _sideline_stray(np.array([60.0, 1.9]), "Defense", los, "left")  # defense side
+    assert not _sideline_stray(np.array([40.0, 20.0]), "Defense", los, "left")  # mid-field
+    assert not _sideline_stray(np.array([40.0, 1.9]), "Offense", los, "left")
+    assert not _sideline_stray(np.array([40.0, 1.9]), "Defense", None, "left")
 
 
 def test_cap_sides_moves_the_surplus_back_across_the_line():

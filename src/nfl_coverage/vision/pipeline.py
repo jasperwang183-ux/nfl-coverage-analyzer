@@ -419,7 +419,7 @@ def _canonical(offense: str, los: float, ball_y: float | None) -> tuple[float, f
 
 
 def sequence_reads(
-    bundle, clip: TrackedClip, sides, snap_i: int, offense: str, step: float
+    bundle, clip: TrackedClip, sides, snap_i: int, offense: str, step: float, los=None
 ) -> tuple[ModelRead | None, ModelRead | None]:
     """The sequence model's pre-snap and whole-play calls, or (None, None) if it can't read.
 
@@ -431,7 +431,7 @@ def sequence_reads(
     from nfl_coverage.models import sequence  # deferred: torch import
 
     tracks = canonical_tracks(
-        clip.frames, clip.calibrations, sides, snap_i, offense, step, drop_line=False
+        clip.frames, clip.calibrations, sides, snap_i, offense, step, drop_line=False, los=los
     )
     try:
         p = sequence.predict(bundle, tracks)
@@ -502,7 +502,7 @@ def read_tracked(
     ball_y = ball_y if ball_y is not None else form.ball_y
 
     sides = assign_sides(frames[snap_i], calibs[snap_i], los, offense, bodies)
-    tracks = canonical_tracks(frames, calibs, sides, snap_i, offense, step)
+    tracks = canonical_tracks(frames, calibs, sides, snap_i, offense, step, los=los)
     los_c, center = _canonical(offense, los, ball_y)
 
     declared = declared_frame(
@@ -545,7 +545,9 @@ def read_tracked(
 
         ranked = predict_proba(bundle, snapshot_features(snap)).iloc[0]
         variant = [(str(k), float(v)) for k, v in ranked.sort_values(ascending=False).items()]
-    pre_model, post_model = sequence_reads(sequence_bundle, clip, sides, snap_i, offense, step)
+    pre_model, post_model = sequence_reads(
+        sequence_bundle, clip, sides, snap_i, offense, step, los=los
+    )
     label = rot["shell_rotation_label"] or ""
     score = float(rot["shell_rotation_score"])
     report = CoverageReport(
