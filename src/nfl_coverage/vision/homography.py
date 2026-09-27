@@ -38,9 +38,14 @@ class FieldCalibration:
             raise ValueError(f"need >= 4 correspondences, got {len(px)}")
         # threshold is in destination units — field *yards*, so keep it tight
         method = cv2.RANSAC if len(px) > 4 else 0
-        matrix, _ = cv2.findHomography(px, fp, method, ransacReprojThreshold=1.0)
+        # fit around the points' own center so the result does not depend on where the
+        # field origin is: a naming shifted along the field must give the same camera
+        center = fp.mean(axis=0)
+        matrix, _ = cv2.findHomography(px, fp - center, method, ransacReprojThreshold=1.0)
         if matrix is None:
             raise ValueError("homography estimation failed (degenerate points?)")
+        shift = np.array([[1, 0, center[0]], [0, 1, center[1]], [0, 0, 1]], dtype=np.float64)
+        matrix = shift @ matrix
         return cls(px, fp, matrix)
 
     def to_field(self, pixel_xy) -> np.ndarray:
