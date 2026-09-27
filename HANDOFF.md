@@ -1,5 +1,35 @@
 # Session Handoff — updated 2026-09-27
 
+## Sequence model on the cards, and the play window (2026-09-27, later)
+
+**Cards.** Each card carries its own sequence-model head (`CoverageReport.pre_model` /
+`post_model`, a typed `ModelRead`): the pre-snap card the look up to the snap, the
+post-snap card snap to +3 s, each with its top 3, a level and man/zone. The snap-frame
+gradient boosting model stays in `report.variant` for disguise, still and verify, and is
+the card's fallback when `models/sequence_v1.pt` is missing. Film reads rebuild the tracks
+with the line kept for the model (it trained on all 22; its LOS estimate needs the offense)
+and skip it off a 0.1 s grid. Corrections log `model_variant`; verify film records
+`seq_pre_top` / `seq_post_top`. Clip 1 reads Cover 4 on both heads (88%, 96%), the user
+marked both cards correct. Open: the structural level (crop, margins) and the model's level
+(top vs second) can disagree on one card; capping the model's level at the structural one
+is an option the user has not picked.
+
+**Play window.** `first_motion` took the first two moving samples as the play. On the
+Dolphins wide shot that is a camera pan at 5.5 s (peak 8), so the window (4-11 s) missed
+the 15.6 s snap and the page stopped at needs_input. It is now the first run peaking at
+`PLAY_PEAK` (10), else the first run; the window is built around it (`play_window`) and
+the calibration is carried when it sits outside. Probe over the manifest: every clip keeps
+its old window except the Dolphins wide shot, which now reads (snap 15.56 s). The strongest
+run is not the rule: 1532's replay outmoves its play. Clip 2 still misses (two full plays
+in one clip; motion cannot tell which) and is not on the page.
+
+**The page's clips.** Results are written once and never recomputed, so clips from before
+the rework showed old reads or waited on manual naming. Those 6 and 2 failed runs moved to
+`data/web_archive/` (nothing deleted). The page now holds clip 1, 1326, 1529, 1533 and the
+Dolphins wide shot, all run with this code. 1326 and 1533 are there for the user to check
+against the film (snap, offense side, shells) with Correct / Wrong. A result version stamp
+would flag stale clips automatically; not built.
+
 ## Sequence model scored on the frozen holdout (2026-09-27)
 
 Branch `worktree-agent-a30822969fc9406b3` (remote `sequence-model`), not merged. Leakage
