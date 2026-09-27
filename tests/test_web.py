@@ -382,8 +382,9 @@ def test_corrections_are_logged_against_the_model_call(client, tmp_path, monkeyp
     recs = [json.loads(line) for line in log.read_text().splitlines()]
     keys = {"logged", "clip", "clip_id", "phase", "correct", "call", "note"}
     keys |= {"model_call", "model_confidence", "snap_t", "read_t"}
-    keys |= {"model_variant", "model_variant_confidence"}
+    keys |= {"model_variant", "model_variant_confidence", "target"}
     assert [set(rec) for rec in recs] == [keys, keys]
+    assert {rec["target"] for rec in recs} == {"shell"}
     post, pre = recs
     assert post["model_variant"] is None  # no sequence model in this app
     assert post["clip"] == "play.mp4" and post["clip_id"] == cid
@@ -406,6 +407,30 @@ def test_corrections_are_logged_against_the_model_call(client, tmp_path, monkeyp
     )
     kept = client.get(f"/api/clips/{cid}").json()["corrections"]
     assert kept["post"]["call"] == "COVER_6_ZONE" and kept["pre"]["correct"] is True
+
+
+def test_the_exact_call_is_judged_apart_from_the_shell(client, tmp_path, monkeypatch):
+    log = tmp_path / "c.jsonl"
+    monkeypatch.setattr("nfl_coverage.web.app.CORRECTIONS", log)
+    cid = _with_result(client, tmp_path)
+    body = {"phase": "post", "target": "exact", "correct": True}
+    r = client.post(f"/api/clips/{cid}/correction", json=body)
+    assert r.status_code == 409  # this app has no sequence model, so no exact call to judge
+    res = tmp_path / "web" / cid / "result.json"
+    rep = json.loads(res.read_text())
+    rep["report"]["post_model"] = {
+        "source": "sequence_v1",
+        "t": 3.0,
+        "variant": [["COVER_2_ZONE", 0.81], ["COVER_6_ZONE", 0.1]],
+        "confidence": "high",
+        "man_zone": [["ZONE_COVERAGE", 0.9], ["MAN_COVERAGE", 0.1]],
+    }
+    res.write_text(json.dumps(rep))
+    r = client.post(f"/api/clips/{cid}/correction", json=body)
+    assert r.status_code == 200, r.text
+    assert (r.json()["target"], r.json()["call"]) == ("exact", "COVER_2_ZONE")
+    kept = client.get(f"/api/clips/{cid}").json()["corrections"]
+    assert "post_exact" in kept and "post" not in kept
 
 
 def test_the_calls_a_person_may_pick(client):
