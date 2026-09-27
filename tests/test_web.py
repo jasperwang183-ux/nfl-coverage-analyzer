@@ -15,6 +15,7 @@ from nfl_coverage.vision.track import TrackedFrame
 from nfl_coverage.web.app import (
     calibration_candidates,
     create_app,
+    play_window,
     suggest_calibration_frame,
 )
 
@@ -102,6 +103,21 @@ def test_naming_tries_the_suggested_frame_then_the_nearest_still_ones():
     assert suggest_calibration_frame(samples) == 5
     # 2 moved (a camera jolt), 6 on is the play: neither is tried
     assert calibration_candidates(samples, 5) == [5, 4, 3, 1, 0]
+
+
+def test_the_window_skips_a_camera_move_before_the_play():
+    # the Dolphins wide shot: a pan peaking at 8 at 1.5 s, the camera drifting, the play at 4 s
+    scores = [0, 0.2, 0.3, 5.3, 8.4, 4.5, 2.1, 2.0, 2.4, 11.7, 13.7, 15.4]
+    samples = [{"i": i, "t": i * 0.5, "score": s} for i, s in enumerate(scores)]
+    assert suggest_calibration_frame(samples) == 2
+    assert play_window(samples, 1.0, 6.0) == {"start": 3.0, "end": 6.0}
+
+
+def test_the_window_keeps_the_play_ahead_of_a_bigger_replay():
+    # 1532: the play from 1.0 s peaking at 14, a still stretch, then a replay peaking at 28
+    scores = [0, 0, 9.0, 14.0, 5.0, 0.1, 0.1, 16.0, 28.0]
+    samples = [{"i": i, "t": i * 0.5, "score": s} for i, s in enumerate(scores)]
+    assert play_window(samples, 0.5, 20.0) == {"start": 0.0, "end": 6.5}
 
 
 def test_naming_without_a_play_in_motion_tries_every_still_frame():
@@ -278,7 +294,8 @@ def test_an_upload_runs_on_to_tracking_and_reading_by_itself(tmp_path, monkeypat
 
     def named(d, meta):
         clip.calibrations[0].save(d / "calibration.json")
-        return {"t": 0.5, "naming": "auto", "edge_margin": 3}, ["0.0 s: no fit"]
+        t = meta["samples"][meta["suggested_sample"]]["t"]
+        return {"t": t, "naming": "auto", "edge_margin": 3}, ["0.0 s: no fit"]
 
     monkeypatch.setattr("nfl_coverage.web.app.auto_calibrate", named)
     monkeypatch.setattr("nfl_coverage.vision.pipeline.track_frames", lambda *a, **k: clip)

@@ -45,7 +45,8 @@ SAMPLE_EVERY = 0.5  # s between picker thumbnails
 THUMB_WIDTH = 640
 STILL_SCORE = 1.0  # motion score of a paused / pre-snap still stretch
 MOVING_SCORE = 3.0  # ... and of a play in motion
-WINDOW_BEFORE = 1.0  # s tracked before the suggested frame
+PLAY_PEAK = 10.0  # a run peaking below this is a camera move, not the play
+WINDOW_BEFORE = 1.0  # s tracked before the sample where the play starts moving
 # ...and after it: the snap comes within ~0.5 s of the last still frame, and the
 # played read may be taken up to pipeline.PLAYED_MAX_S (5 s) after the snap
 WINDOW_AFTER = 6.0
@@ -120,11 +121,36 @@ def sample_video(path: Path, out_dir: Path, every: float = SAMPLE_EVERY) -> list
 
 
 def first_motion(samples: list[dict]) -> int | None:
-    """Index of the first of two samples in a row that move like a play (None: none do)."""
-    for k in range(1, len(samples) - 1):
-        if samples[k]["score"] > MOVING_SCORE and samples[k + 1]["score"] > MOVING_SCORE:
-            return k
-    return None
+    """Where the play starts: the first sample of the first run of two or more moving
+    samples that peaks like a play (None: nothing moves).
+
+    A camera pan or zoom before the snap moves the frame too (peak 8 on the Dolphins
+    wide shot) and a replay after the play can move it more than the play (1532), so
+    the pick is the first run peaking at PLAY_PEAK, else the first run at all.
+    """
+    runs, start = [], None
+    for k in range(1, len(samples) + 1):
+        moving = k < len(samples) and samples[k]["score"] > MOVING_SCORE
+        if moving and start is None:
+            start = k
+        elif not moving and start is not None:
+            if k - start >= 2:
+                runs.append((start, max(s["score"] for s in samples[start:k])))
+            start = None
+    played = [s for s, peak in runs if peak >= PLAY_PEAK]
+    return played[0] if played else (runs[0][0] if runs else None)
+
+
+def play_window(samples: list[dict], t_cal: float, duration: float) -> dict:
+    """Seconds to track, around the sample just before the play starts (the calibration
+    frame when no play is found). The calibration is carried to the window when it is
+    outside it."""
+    k = first_motion(samples)
+    anchor = samples[k - 1]["t"] if k is not None else t_cal
+    return {
+        "start": round(max(0.0, anchor - WINDOW_BEFORE), 2),
+        "end": round(min(duration, anchor + WINDOW_AFTER), 2),
+    }
 
 
 def suggest_calibration_frame(samples: list[dict]) -> int:
@@ -432,10 +458,7 @@ def create_app(
             **info,
             "samples": samples,
             "suggested_sample": suggested,
-            "window": {
-                "start": round(max(0.0, t_cal - WINDOW_BEFORE), 2),
-                "end": round(min(info["duration"], t_cal + WINDOW_AFTER), 2),
-            },
+            "window": play_window(samples, t_cal, info["duration"]),
             "stage": "uploaded",
             "needs": None,
             "progress": 0.0,
