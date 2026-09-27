@@ -457,6 +457,9 @@ def run_holdout(
     if "variant" in checks:
         log("  variant model")
         results["variant"]["all"] = variant_model()
+    if "sequence" in checks:
+        log("  sequence model")
+        results["sequence"] = sequence_model(frames_by_ds)
     if "disguise" in checks:
         log("  disguise hand labels")
         results["disguise"]["all"] = disguise_hand_labels(frames_by_ds)
