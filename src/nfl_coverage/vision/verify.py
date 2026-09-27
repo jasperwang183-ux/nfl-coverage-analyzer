@@ -176,11 +176,12 @@ def tracking_code_hash() -> str:
     return h.hexdigest()[:8]
 
 
-def cache_key(video: Path, entry: dict, imgsz: int) -> str:
+def cache_key(video: Path, entry: dict, imgsz: int, auto_naming: bool = False) -> str:
     st = video.stat()
     # tracking depends on the anchor calibration and the window, not on read overrides
     blob = json.dumps(
-        [video.name, st.st_size, entry["calib"], entry["window"], imgsz, tracking_code_hash()],
+        [video.name, st.st_size, entry["calib"], entry["window"], imgsz, tracking_code_hash()]
+        + (["auto"] if auto_naming else []),
         sort_keys=True,
     )
     return hashlib.sha1(blob.encode()).hexdigest()[:10]
@@ -196,11 +197,18 @@ def verify_clip(
     retrack: bool = False,
     imgsz: int = 1920,
     log: Callable[[str], None] = print,
+    auto_naming: bool = False,
 ) -> dict:
-    """Run one manifest entry through every stage; never raises."""
+    """Run one manifest entry through every stage; never raises.
+
+    `auto_naming` names the lines as the page does without a person
+    (`fieldlines.auto_name`); the manifest's naming then only translates its
+    field-x facts (LOS) into the auto naming's frame.
+    """
     import cv2
 
     from nfl_coverage.vision.fieldlines import (
+        auto_name,
         find_marks,
         five_yard_shift_warning,
         grid_drift,
@@ -249,10 +257,22 @@ def verify_clip(
             if n_yard < 3:
                 st.warn("fewer than 3 yard lines: a thin base for the fit")
 
+        shift_x = 0.0
         with _stage(stages, "calibration") as st:
             x_mid = [ln.x_at(marks.ref_y) for ln in marks.lines]
             yards = naming_yards(marks.offsets, entry["calib"], x_mid)
-            search = search_calibration(img, yards, marks=marks)
+            if auto_naming:
+                named = auto_name(img, marks)
+                shift_x = next(
+                    a - m for a, m in zip(named.yards, yards) if a is not None and m is not None
+                )
+                yards, search = named.yards, named.search
+                st.metrics["edge_margin"] = named.edge_margin
+                st.metrics["shift_x"] = shift_x
+                if shift_x % 10:
+                    st.warn(f"auto naming put the 10s on other lines than the manifest ({shift_x:+.0f} yd)")
+            else:
+                search = search_calibration(img, yards, marks=marks)
             best = search.best
             st.metrics = {
                 "n_landmarks": len(best.pixel),
@@ -265,7 +285,7 @@ def verify_clip(
             }
             if search.warning:
                 st.warn("hash rows only: depth toward the sidelines is extrapolated")
-            shift = five_yard_shift_warning(img, yards, search, marks=marks)
+            shift = None if auto_naming else five_yard_shift_warning(img, yards, search, marks=marks)
             if shift:
                 st.warn("numbers prefer a 5-yd shift: " + shift)
             anchor, anchor_t = best.calibration, cal_t
@@ -281,7 +301,7 @@ def verify_clip(
                     st.warn("refit on the hash rows alone: depth toward the sidelines extrapolated")
 
         with _stage(stages, "tracking") as st:
-            key = cache_key(video, entry, imgsz)
+            key = cache_key(video, entry, imgsz, auto_naming)
             cdir = Path(cache_root) / f"{entry['id']}-{key}"
             if retrack or not (cdir / "tracked.json").exists():
                 log(f"    tracking {start}-{end} s (minutes on a CPU)")
@@ -337,7 +357,7 @@ def verify_clip(
                 read = read_tracked(
                     clip,
                     snap_t=given.get("snap_t"),
-                    los=given.get("los"),
+                    los=None if given.get("los") is None else given["los"] + shift_x,
                     offense=given.get("offense"),
                     ball_y=given.get("ball_y"),
                     bundle=bundle,
@@ -382,7 +402,10 @@ def verify_clip(
         pass
 
     if entry.get("expect") and result is not None:
-        out["expect"] = compare_expect(entry["expect"], result)
+        expect = dict(entry["expect"])
+        if expect.get("los") is not None:
+            expect["los"] += shift_x
+        out["expect"] = compare_expect(expect, result)
     out["stages"] = [s.to_dict() for s in stages]
     out["status"] = _rollup(out["stages"])
     return out

@@ -899,6 +899,47 @@ def five_yard_shift_warning(
     )
 
 
+@dataclass
+class AutoNaming:
+    yards: list[float | None]
+    search: CalibrationSearch
+    edge_margin: int  # number edges the chosen parity won by (0 = the numbers could not tell)
+
+
+def auto_name(
+    image: np.ndarray,
+    marks: FieldMarks,
+    min_length: int = 250,
+    votes: int = 120,
+) -> AutoNaming:
+    """Name the yard lines without a person: which lines carry the painted numbers.
+
+    A read is the same wherever the field is shifted along its length (depths are
+    measured from the LOS), so the absolute yard is arbitrary: the middle line is
+    put near midfield. Only the parity matters - the fit anchors the painted
+    numbers on the 10s - so both parities are fitted and the one whose 10s find
+    more number edges wins, then more field rows, then the smaller error.
+    """
+    known = [o for o in marks.offsets if o is not None]
+    if len(known) < 2:
+        raise ValueError(f"only {len(known)} yard lines found")
+    mid = known[len(known) // 2]
+    tries = []
+    for shift in (0.0, 5.0):
+        yards = [None if o is None else 60.0 + shift + 5.0 * (o - mid) for o in marks.offsets]
+        try:
+            search = search_calibration(image, yards, None, min_length, votes, marks)
+        except ValueError:
+            continue
+        b = search.best
+        tries.append(((n_number_edges(b), search.n_rows, -float(b.errors.mean())), yards, search))
+    if not tries:
+        raise ValueError("no fit on this frame's yard lines")
+    tries.sort(key=lambda t: t[0], reverse=True)
+    margin = tries[0][0][0] - tries[1][0][0] if len(tries) > 1 else 0
+    return AutoNaming(tries[0][1], tries[0][2], margin)
+
+
 def grid_residual(xs: np.ndarray) -> float:
     """Median distance (yd) of projected yard-line x's from the nearest whole 5 yd."""
     xs = np.asarray(xs, float)
