@@ -10,6 +10,7 @@ from nfl_coverage.vision.fieldlines import (
     NUMBER_ROWS_FAR,
     NUMBER_ROWS_NEAR,
     YardLine,
+    auto_name,
     field_x_for_lines,
     find_marks,
     grid_drift,
@@ -167,6 +168,21 @@ def test_numbers_prefer_the_true_labeling_over_a_5_yard_shift():
         return sum(int(n.split()[0]) for n in r.best.notes if n.endswith("number edges"))
 
     assert edges(xs) >= edges(shifted) + 4
+
+
+def test_auto_name_finds_the_10s_and_the_camera_up_to_a_shift_along_the_field():
+    size = (1600, 900)
+    frame, truth = _camera(_topdown(), size=size)
+    marks = find_marks(frame)
+    named = auto_name(frame, marks)
+    xs = [
+        truth.to_field(np.float32([[ln.x_at(marks.ref_y), marks.ref_y]]))[0, 0]
+        for ln, y in zip(marks.lines, named.yards)
+        if y is not None
+    ]
+    shift = {round(y - x) for x, y in zip(xs, [y for y in named.yards if y is not None])}
+    assert len(shift) == 1 and shift.pop() % 10 == 0
+    assert named.edge_margin >= 4
 
 
 def test_a_fit_on_the_hash_rows_alone_is_kept_with_a_depth_warning():

@@ -452,9 +452,10 @@ def _match_row(
     """Ticks on the predicted 1-yd slots of the image row y = m x + c."""
     pts = np.array([intersect(ln, Row(m, c, 0)) for ln in lines])
     k = np.asarray(xs_field, float)
-    p = _fit_p1(k, pts[:, 0])
+    k0 = k.mean()  # the map's "+ 1" denominator is not translation-invariant in k
+    p = _fit_p1(k - k0, pts[:, 0])
     grid = np.arange(np.floor(k.min()) - TICK_BEYOND, np.ceil(k.max()) + TICK_BEYOND + 1)
-    x_grid = _eval_p1(p, grid)
+    x_grid = _eval_p1(p, grid - k0)
     step = np.abs(np.gradient(x_grid))
     slot = np.round(grid) % 5 != 0  # the yard lines themselves are not ticks
     ks, xs, step = grid[slot], x_grid[slot], step[slot]

@@ -274,7 +274,7 @@ def verify_clip(
             else:
                 search = search_calibration(img, yards, marks=marks)
             best = search.best
-            st.metrics = {
+            st.metrics |= {
                 "n_landmarks": len(best.pixel),
                 "n_rows": search.n_rows,
                 "n_number_edges": n_number_edges(best),

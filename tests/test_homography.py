@@ -1,5 +1,8 @@
 """Homography calibration round-trip on synthetic camera geometry."""
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -47,3 +50,13 @@ def test_too_few_points_rejected():
 def test_on_field_mask():
     pts = np.array([[60.0, 26.0], [-5.0, 26.0], [60.0, 60.0], [119.5, 0.5]])
     assert on_field(pts).tolist() == [True, False, False, True]
+
+
+def test_the_fit_does_not_depend_on_where_the_field_origin_is():
+    # a real hash-only fit: near-degenerate, it moved ~0.4 yd when the naming slid 60 yd
+    lm = json.loads((Path(__file__).parent / "fixtures" / "hash_only_landmarks.json").read_text())
+    pixel, field = np.array(lm["pixel"]), np.array(lm["field"])
+    base = FieldCalibration.from_points(pixel, field)
+    for d in (60.0, 90.0):
+        moved = FieldCalibration.from_points(pixel, field + [d, 0.0])
+        assert np.allclose(moved.to_field(pixel) - [d, 0.0], base.to_field(pixel), atol=1e-2)
