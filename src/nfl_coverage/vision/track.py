@@ -40,13 +40,14 @@ from nfl_coverage.vision.teams import (
 )
 
 SIDELINE_Y_MARGIN = -0.5
-# At the snap nobody lines up near a sideline: of ~24K snap-frame positions in Big
-# Data Bowl week 1 (2018 + 2023) one was within 3 yd of it and none within 0.5.
-# Bodies there are the line judge, the down judge or the chain crew; a margin of
-# 2 yd leaves a yard for calibration error at the far sideline. (On clip 1 a line
-# judge 0.6 yd inside the far sideline was sided as the widest defender, took the
-# corner's place and turned a corner bail into a 1.0 "rotation_up".)
-SNAP_SIDELINE_CLEAR = 2.0
+# At the snap almost nobody lines up near a sideline: of 107K snap-frame positions in
+# Big Data Bowl weeks 1-4 (2018 + 2023), 15 were within 4 yd of it (59 within 5).
+# Bodies there are the line judge, the down judge or the chain crew. Calibration near
+# a cropped sideline is extrapolated, so an official standing on it can land yards
+# inside: on 15-34-46 the head linesman and line judge measured 2.6 and 3.8 yd in and
+# were sided as the widest defenders. (On clip 1 a line judge 0.6 yd inside the far
+# sideline took the corner's place and turned a corner bail into a 1.0 "rotation_up".)
+SNAP_SIDELINE_CLEAR = 4.0
 
 
 @dataclass
@@ -210,7 +211,9 @@ def assign_sides(
     isp = b.is_player
     sides = sides_from_clusters(b.labels[isp], b.xy[isp, 0], los, offense, colors=b.colors[isp])
     sides = cap_sides(sides, b.xy[isp, 0], los, offense)
-    side_by_id = {int(i): s for i, s in zip(b.ids[isp], sides)}
+    # bodies ruled out at the snap stay out: "-" keeps a later frame from re-siding them
+    side_by_id = {int(i): "-" for i in b.ids[~isp]}
+    side_by_id |= {int(i): s for i, s in zip(b.ids[isp], sides)}
     # line players via the still rule on a one-frame canonical table
     pts = b.xy[isp].copy()
     if offense == "right":
@@ -260,6 +263,15 @@ def unclipped_mask_boxes(boxes: np.ndarray, image_height: int, edge_px: int = 4)
     return boxes[:, 3] < image_height - edge_px
 
 
+def _sideline_stray(xy: np.ndarray, side: str, los: float | None, offense: str) -> bool:
+    """A body first seen by the sideline in the offense's backfield is not a defender:
+    the chain crew and officials stand there, defenders never do."""
+    if los is None or side != "Defense":
+        return False
+    behind = (xy[0] - los) if offense == "right" else (los - xy[0])  # > 0: offense's side
+    return behind > 0 and min(xy[1], FIELD_WIDTH - xy[1]) < SNAP_SIDELINE_CLEAR
+
+
 def canonical_tracks(
     frames: list[TrackedFrame],
     calibs: list[FieldCalibration],
@@ -271,12 +283,14 @@ def canonical_tracks(
     game_id: int = 0,
     play_id: int = 0,
     drop_line: bool = True,
+    los: float | None = None,
 ) -> pd.DataFrame:
     """Canonical frames at the sampling rate: offense -> right, rel_frame 0 at the snap.
 
     Speeds and accelerations come from finite differences of position; `dir` is
     the direction of motion (degrees, tracking-data convention), `o` is NaN
-    (no body orientation from a box).
+    (no body orientation from a box). `los` (raw field x) lets a body the tracker
+    re-identifies later be ruled out as a sideline stray.
     """
     rows = []
     side_by_id = dict(sides.side_by_id)
@@ -297,7 +311,11 @@ def canonical_tracks(
             got, ok = sides.teams.assign(colors)
             onf = on_field(xy[new], y_margin=SIDELINE_Y_MARGIN)
             for k, sd, good, st, on in zip(new, got, ok, striped, onf):
-                side_by_id[int(ids[k])] = sd if (good and not st and on) else "-"
+                side_by_id[int(ids[k])] = (
+                    sd
+                    if (good and not st and on and not _sideline_stray(xy[k], sd, los, offense))
+                    else "-"
+                )
         for tid, (x, y) in zip(ids, xy):
             side = side_by_id.get(int(tid))
             if side in (None, "-") or (drop_line and int(tid) in sides.line_ids):
