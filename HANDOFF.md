@@ -1,4 +1,57 @@
-# Session Handoff — updated 2026-09-26
+# Session Handoff — updated 2026-09-27
+
+## Automatic ingest: naming without a person, and the page plan (2026-09-27)
+
+**Naming QA.** Claude's 7 manifest namings were checked against the painted numbers
+(a number straddles its own line). 1326 was 5 yd off: its red line is the 5, not the 10
+(the leftmost line borders the end zone, so it is the goal line). Fixed in the manifest.
+The other six are right. 1533's calibration frame carries telestrator circles.
+The 5-yd shift warning missed 1326 (4 number edges vs 2, the margin is 4).
+
+**Naming is automatic now** (`fieldlines.auto_name`). A read is translation-invariant
+along the field: depth, shells, MOF, disguise and the variant all measure from the LOS.
+So the absolute yard is arbitrary (the middle line goes near midfield), and only the
+parity matters (which lines are the 10s, where the numbers are). Both parities are fitted
+and the one whose 10s find more number edges wins, then more field rows, then smaller
+error. It picks the confirmed parity on all 11 manifest clips (a tie on 1530 and the Dolphins
+wide shot is settled by rows or makes no difference). `verify.py film --auto-naming`
+runs the manifest that way and translates the manifest's LOS facts into its frame.
+
+**Two fits depended on where the field origin sits**, found because auto naming moved
+it. (1) `FieldCalibration.from_points`: the hash-only Dolphins wide fit moved ~0.4 yd
+with a naming slid 60 yd, enough to flip band settings across the search's error cutoff.
+A spurious 4-row fit then won, and the read found no snap. It is now fitted around the
+points' own center (test: `tests/fixtures/hash_only_landmarks.json`, the real landmarks).
+(2) The 1-yd tick fit `_fit_p1` (`u = (ak+b)/(ck+1)`): the `+1` is not translation-invariant
+in k, so 1531b's tick hashes failed at some placements. k is now centered. After both, each
+clip gives one identical fit at every placement from -100 to +100 yd.
+
+**Verify.** Before the fixes, auto naming read 8/11: the Dolphins wide shot regressed, and
+1531a (no snap) and 1531b (5 offense) fail as they did before. Reruns with the fixes
+(`origin-fix` manual, `origin-fix-auto` auto) were in flight at push time: compare them
+first (`verify.py compare origin-fix origin-fix-auto` should differ only in LOS).
+
+**Page plan (built on branch `worktree-agent-a4f8a028205439008`, second push).**
+1. Automatic ingest. Upload an mp4 and the page picks the frame, names the lines and
+   calibrates on its own. It falls back to the manual naming only when that fails
+   (up to 6 still frames tried, nearest the suggested one first).
+2. Pre-snap card. Call, confidence, reasons.
+3. Post-snap card. The frame +2 to +5 s after the snap with the most defenders deep (the
+   user agreed to 2-5 s: coverage is read before the throw). Call, confidence, reasons, the
+   model's top 3 variants, the rotator's move.
+4. Correct / Wrong on each card. Wrong requires a call (dropdown + note). Every save is
+   appended to `data/processed/coverage_corrections.jsonl`, the film-confirmation loop.
+5. The manual controls (frame, naming, window, overrides) sit in a collapsed Adjust section
+   that opens on needs_input.
+6. The absolute LOS is no longer shown as a yard line (auto naming does not know it;
+   reading the digits would).
+
+Stage table in `app.py` (`STAGES`, `ClipStore.advance` rejects illegal moves): uploaded ->
+calibrating -> tracking -> reading -> done | needs_input{calibration|snap|offense} | error.
+Clip 1 through the real server: done in ~1 min, 2-high open shown, Cover 4 played at +2.2 s,
+Cover 4 50%. Both structural reads are "low" confidence there (off-frame caveats): decide
+whether that should lead the card.
+
 
 ## Verify harness, GPU, re-anchoring, the overlay (2026-09-26)
 
