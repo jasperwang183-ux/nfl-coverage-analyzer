@@ -8,7 +8,6 @@ samples/verify/clips.json (the analyst's Cover 4 call and the measured LOS).
 
 import json
 import time
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
