@@ -63,17 +63,27 @@ class StructuralRead:
     mof_margin: float  # yards the MOF verdict is from flipping
     confidence: str  # high / medium / low
     reasons: list[str] = field(default_factory=list)
+    confidence_why: list[str] = field(default_factory=list)  # what kept it from high
 
 
-def _confidence(depth_margin: float, mof_margin: float, caveats: list[str]) -> str:
+def _confidence(
+    depth_margin: float, mof_margin: float, caveats: list[str]
+) -> tuple[str, list[str]]:
     serious = [c for c in caveats if "off-frame" in c or "defenders detected" in c]
+    why = [c.split(" — ")[0] for c in serious]
+    if depth_margin < 2.0:
+        why.append(
+            f"a defender is {depth_margin:.1f} yd from the deep line, so the count could flip"
+        )
+    if mof_margin < 2.0:
+        why.append(f"the middle open/closed call is {mof_margin:.1f} yd from flipping")
     if any("defenders detected" in c for c in caveats):
-        return "low"  # missing or surplus bodies: the structure itself is in doubt
+        return "low", why  # missing or surplus bodies: the structure itself is in doubt
     if depth_margin >= 2.0 and mof_margin >= 2.0 and not serious:
-        return "high"
+        return "high", []
     if depth_margin >= 1.0 and mof_margin >= 1.0 and len(serious) <= 1:
-        return "medium"
-    return "low"
+        return "medium", why
+    return "low", why
 
 
 def structural_read(
@@ -148,6 +158,7 @@ def structural_read(
             f"({'press' if pressed(low) else 'off'} / {'press' if pressed(high) else 'off'})"
         )
     fam = FAMILY.get((min(n_deep, 4), bool(mof_closed)), shell_label(n_deep, bool(mof_closed)))
+    confidence, confidence_why = _confidence(depth_margin, mof_margin, caveats)
     return StructuralRead(
         frame=frame,
         n_deep=n_deep,
@@ -164,8 +175,9 @@ def structural_read(
         corners_pressed=(pressed(low), pressed(high)),
         depth_margin=round(depth_margin, 2),
         mof_margin=round(mof_margin, 2) if np.isfinite(mof_margin) else 99.0,
-        confidence=_confidence(depth_margin, mof_margin, caveats),
+        confidence=confidence,
         reasons=reasons,
+        confidence_why=confidence_why,
     )
 
 

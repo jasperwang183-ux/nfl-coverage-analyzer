@@ -49,7 +49,7 @@ WINDOW_BEFORE = 1.0  # s tracked before the suggested frame
 # ...and after it: the snap comes within ~0.5 s of the last still frame, and the
 # played read may be taken up to pipeline.PLAYED_MAX_S (5 s) after the snap
 WINDOW_AFTER = 6.0
-MAX_AUTO_FRAMES = 6  # still frames tried for automatic naming before asking a person
+MAX_AUTO_FRAMES = 3  # ~5 s a try; neighbouring still frames fail together, so ask sooner
 SNAP_LABELS = DATA_PROCESSED / "snap_labels.jsonl"
 CORRECTIONS = DATA_PROCESSED / "coverage_corrections.jsonl"
 

@@ -566,6 +566,7 @@ function readCard(phase, title, when, r, extra = "") {
     <div class="call">${esc(r.shell)}</div>
     <div>${esc(r.family)}</div>
     ${confidence(r.confidence)}
+    ${(r.confidence_why || []).length ? `<div class="muted why">${esc(r.confidence)} because ${r.confidence_why.map(esc).join("; ")}</div>` : ""}
     <ul class="reasons">${(r.reasons || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
     ${extra}
     ${verdict(phase, r)}`;

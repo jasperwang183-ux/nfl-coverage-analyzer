@@ -43,7 +43,7 @@ def test_two_high_open_reads_high_confidence():
     assert r.shell == "2-high MOF-open"
     assert "Cover 2 / Cover 4 / Cover 6" in r.family
     assert r.corners_pressed == (True, True)
-    assert r.confidence == "high"
+    assert r.confidence == "high" and r.confidence_why == []
     assert any("middle open" in x for x in r.reasons)
 
 
@@ -52,10 +52,12 @@ def test_caveats_and_thin_margins_lower_confidence():
         _frame(), 49.5, 26.6, 9.0, "snap", caveats=["deep zone beyond 14 yd is off-frame"]
     )
     assert r.confidence == "medium"
+    assert r.confidence_why == ["deep zone beyond 14 yd is off-frame"]
     # a safety sitting right on the deep threshold: the count could flip either way
     edgy = [d for d in DEFENSE if d != (63.0, 35.0)] + [(58.7, 35.0)]
     r2 = structural_read(_frame(edgy), 49.5, 26.6, 9.0, "snap", caveats=[])
     assert r2.depth_margin < 0.5 and r2.confidence == "low"
+    assert any("from the deep line" in w for w in r2.confidence_why)
 
 
 def test_post_safety_reads_closed():
