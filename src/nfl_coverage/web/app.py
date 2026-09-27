@@ -357,6 +357,7 @@ class CorrectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     phase: Literal["pre", "post"]
+    target: Literal["shell", "exact"] = "shell"  # the structural call, or the model's coverage
     correct: bool
     call: str | None = Field(None, min_length=1, max_length=60)
     note: str | None = Field(None, max_length=2000)
@@ -477,9 +478,12 @@ def create_app(
         """What a person may say a read should have been: shells, the model's classes, Other."""
         from nfl_coverage.analysis.shell import shell_label
 
-        b = bundle()
+        b, seq = bundle(), sequence_bundle()
         shells = dict.fromkeys(shell_label(n, c) for n in range(5) for c in (False, True))
-        variants = [str(c) for c in b["model"].classes_] if b is not None else []
+        if seq is not None:
+            variants = list(seq.classes)
+        else:
+            variants = [str(c) for c in b["model"].classes_] if b is not None else []
         return {"shells": list(shells), "variants": variants, "other": "Other"}
 
     @app.get("/api/clips/{clip_id}")
@@ -730,13 +734,17 @@ def create_app(
         if read is None:
             raise HTTPException(409, "there is no post-snap read to correct")
         model = res["report"].get("pre_model" if req.phase == "pre" else "post_model")
+        if req.target == "exact" and not model:
+            raise HTTPException(409, "there is no model call to confirm on this card")
+        judged = model["variant"][0][0] if req.target == "exact" else read["shell"]
         rec = {
             "logged": time.time(),
             "clip": meta["name"],
             "clip_id": clip_id,
             "phase": req.phase,
+            "target": req.target,
             "correct": req.correct,
-            "call": req.call or read["shell"],
+            "call": req.call or judged,
             "note": req.note,
             "model_call": read["shell"],
             "model_confidence": read["confidence"],
@@ -746,7 +754,8 @@ def create_app(
             "read_t": res["snap"]["t"] if req.phase == "pre" else res["played_frame"]["t"],
         }
         log_correction(rec)
-        store.update(clip_id, corrections={**meta.get("corrections", {}), req.phase: rec})
+        key = req.phase if req.target == "shell" else f"{req.phase}_exact"
+        store.update(clip_id, corrections={**meta.get("corrections", {}), key: rec})
         return rec
 
     return app

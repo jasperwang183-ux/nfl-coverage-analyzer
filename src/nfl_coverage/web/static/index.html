@@ -528,45 +528,49 @@ function rotationText(r) {
   return `After the snap one defender ${dd >= 0 ? "dropped" : "came up"} ${Math.abs(dd).toFixed(1)} yd` +
     (parts.length ? `; ${parts.join(", ")}` : "") + ".";
 }
-function verdict(phase, r) {
-  const saved = (clip.corrections || {})[phase];
-  const options = [...calls.shells, ...calls.variants, calls.other]
+// key: "pre" / "post" judge the structural call, "pre_exact" / "post_exact" the model's coverage
+function verdict(key, question) {
+  const saved = (clip.corrections || {})[key];
+  const choices = key.endsWith("_exact") ? calls.variants : calls.shells;
+  const options = [...choices, calls.other]
     .map((c) => `<option${saved && saved.call === c ? " selected" : ""}>${esc(c)}</option>`).join("");
-  const said = !saved ? "" : saved.correct ? "You marked this read correct."
-    : `You marked this read wrong: ${esc(saved.call)}${saved.note ? ` (${esc(saved.note)})` : ""}.`;
+  const said = !saved ? "" : saved.correct ? "You marked this correct."
+    : `You marked this wrong: ${esc(saved.call)}${saved.note ? ` (${esc(saved.note)})` : ""}.`;
   return `<div class="verdictRow">
-      <span class="muted">Is this right?</span>
-      <button class="ghost" data-phase="${phase}" data-correct="1">Correct</button>
-      <button class="ghost" data-phase="${phase}" data-correct="0">Wrong</button>
-      <span class="muted" id="said-${phase}">${said}</span>
+      <span class="muted">${esc(question)}</span>
+      <button class="ghost" data-key="${key}" data-correct="1">Correct</button>
+      <button class="ghost" data-key="${key}" data-correct="0">Wrong</button>
+      <span class="muted" id="said-${key}">${said}</span>
     </div>
-    <div class="verdictRow hidden" id="wrong-${phase}">
-      <label>It was</label><select id="call-${phase}">${options}</select>
-      <input type="text" id="note-${phase}" maxlength="2000" placeholder="note (optional)" value="${esc(saved && !saved.correct ? saved.note : "")}">
-      <button data-save="${phase}">Save</button>
+    <div class="verdictRow hidden" id="wrong-${key}">
+      <label>It was</label><select id="call-${key}">${options}</select>
+      <input type="text" id="note-${key}" maxlength="2000" placeholder="note (optional)" value="${esc(saved && !saved.correct ? saved.note : "")}">
+      <button data-save="${key}">Save</button>
     </div>`;
 }
-async function sendVerdict(phase, correct) {
-  const body = { phase, correct };
+async function sendVerdict(key, correct) {
+  const [phase, exact] = key.split("_");
+  const body = { phase, target: exact ? "exact" : "shell", correct };
   if (!correct) {
-    body.call = $(`call-${phase}`).value;
-    const note = $(`note-${phase}`).value.trim();
+    body.call = $(`call-${key}`).value;
+    const note = $(`note-${key}`).value.trim();
     if (note) body.note = note;
   }
-  $(`said-${phase}`).textContent = "Saving...";
+  $(`said-${key}`).textContent = "Saving...";
   try {
     await post(`/api/clips/${clip.id}/correction`, body);
     clip = await api(`/api/clips/${clip.id}`);
     render();
-  } catch (e) { $(`said-${phase}`).innerHTML = `<span style="color:var(--low)">${esc(e.message)}</span>`; }
+  } catch (e) { $(`said-${key}`).innerHTML = `<span style="color:var(--low)">${esc(e.message)}</span>`; }
 }
-function modelSection(m, from) {
+function modelSection(m, from, key) {
   const top = (m.variant || []).slice(0, 3);
   if (!top.length) return "";
   const mz = (m.man_zone || [])[0];
   return `<h3 style="margin-top:14px">Exact coverage (${esc(from)})</h3>
     <div class="bars">${top.map(([c, p]) => `<div class="b"><span>${esc(c)}</span><div class="track"><div class="fill" style="width:${(100 * p).toFixed(0)}%"></div></div><span>${(100 * p).toFixed(0)}%</span></div>`).join("")}</div>
-    <div class="muted" style="font-size:13px">${conf(m.confidence)}${mz ? ` ${esc(mz[0] === "MAN_COVERAGE" ? "man" : "zone")} ${(100 * mz[1]).toFixed(0)}% ·` : ""} the structure above is the reliable read; this is the model's best guess at the exact call</div>`;
+    <div class="muted" style="font-size:13px">${conf(m.confidence)}${mz ? ` ${esc(mz[0] === "MAN_COVERAGE" ? "man" : "zone")} ${(100 * mz[1]).toFixed(0)}%` : ""}</div>
+    ${key ? verdict(key, `Is ${top[0][0]} right?`) : ""}`;
 }
 function readCard(phase, title, when, r, extra = "") {
   if (!r) return `<h3>${title}</h3><div class="muted">not read: the tracked window ends too soon after the snap</div>`;
@@ -576,8 +580,8 @@ function readCard(phase, title, when, r, extra = "") {
     ${confidence(r.confidence)}
     ${(r.confidence_why || []).length ? `<div class="muted why">${esc(r.confidence)} because ${r.confidence_why.map(esc).join("; ")}</div>` : ""}
     <ul class="reasons">${(r.reasons || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
-    ${extra}
-    ${verdict(phase, r)}`;
+    ${verdict(phase, `Is ${r.shell} right?`)}
+    ${extra}`;
 }
 
 function renderResult(res) {
@@ -590,10 +594,10 @@ function renderResult(res) {
   const after = res.played_frame.t - res.snap.t;
   const rotation = rotationText(res.rotation);
   const post = rep.post_model
-    ? modelSection(rep.post_model, `the sequence model, snap to +${fmt(rep.post_model.t)} s`)
+    ? modelSection(rep.post_model, `the sequence model, snap to +${fmt(rep.post_model.t)} s`, "post_exact")
     : modelSection({ variant: rep.variant || [], confidence: rep.variant_confidence }, "the model, from the snap alignment");
   const extra = (rotation ? `<p style="margin:10px 0 0">${esc(rotation)}</p>` : "") + post;
-  const pre = rep.pre_model ? modelSection(rep.pre_model, "the sequence model, the look up to the snap") : "";
+  const pre = rep.pre_model ? modelSection(rep.pre_model, "the sequence model, the look up to the snap", "pre_exact") : "";
   $("preCard").innerHTML = readCard("pre", "Pre-snap read", `at the snap, ${fmt(res.snap.t)} s`, rep.shown, pre);
   $("postCard").innerHTML = readCard("post", "Post-snap read", `read at +${fmt(after)} s`, rep.played, extra);
   const caveats = [...new Set(rep.caveats || [])];
@@ -603,8 +607,8 @@ function renderResult(res) {
     ${caveats.length ? `<div class="note"><b>Caveats</b><ul>${caveats.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}
     ${res.warnings.length ? `<div class="note"><b>Your values disagree with the formation read</b><ul>${res.warnings.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}`;
   document.querySelectorAll("[data-correct]").forEach((b) => b.onclick = () => {
-    if (b.dataset.correct === "1") sendVerdict(b.dataset.phase, true);
-    else $(`wrong-${b.dataset.phase}`).classList.remove("hidden");
+    if (b.dataset.correct === "1") sendVerdict(b.dataset.key, true);
+    else $(`wrong-${b.dataset.key}`).classList.remove("hidden");
   });
   document.querySelectorAll("[data-save]").forEach((b) => b.onclick = () => sendVerdict(b.dataset.save, false));
   $("toSnap").onclick = () => { $("video").currentTime = res.snap.t; $("video").pause(); };
