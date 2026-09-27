@@ -899,6 +899,53 @@ def five_yard_shift_warning(
     )
 
 
+def grid_residual(xs: np.ndarray) -> float:
+    """Median distance (yd) of projected yard-line x's from the nearest whole 5 yd."""
+    xs = np.asarray(xs, float)
+    if not len(xs):
+        return float("nan")
+    return float(np.median(np.abs(xs - 5.0 * np.round(xs / 5.0))))
+
+
+def grid_drift(
+    image: np.ndarray, calib: FieldCalibration, marks: FieldMarks | None = None
+) -> float:
+    """How far (yd) the frame's own yard lines sit off the 5-yd grid under `calib`.
+
+    Each line is sampled at three heights so a wrong tilt shows as well as a
+    sideways slide. A whole 5-yd slip is invisible here: it still lands on the grid.
+    """
+    m = marks if marks is not None else find_marks(image)
+    h = image.shape[0]
+    ys = [m.ref_y - 0.1 * h, m.ref_y, m.ref_y + 0.1 * h]
+    pts = np.float32([[ln.x_at(y), y] for ln in m.lines for y in ys]).reshape(-1, 2)
+    return grid_residual(calib.to_field(pts)[:, 0]) if len(pts) else float("nan")
+
+
+def refit_from_paint(
+    image: np.ndarray, approx: FieldCalibration, marks: FieldMarks | None = None
+) -> CalibrationSearch:
+    """Refit a frame on its own paint, its yard lines named by an approximate calibration.
+
+    The approximation only has to be within 2.5 yd: each line takes the nearest
+    whole 5 yd consistent with the spacing. Raises ValueError when fewer than two
+    lines can be named or the naming runs past a goal line.
+    """
+    m = marks if marks is not None else find_marks(image)
+    named = [(ln, o) for ln, o in zip(m.lines, m.offsets) if o is not None]
+    if len(named) < 2:
+        raise ValueError(f"{len(named)} yard lines to name")
+    xs = [
+        float(approx.to_field(np.float32([[ln.x_at(m.ref_y), m.ref_y]]))[0, 0]) for ln, _ in named
+    ]
+    base = 5.0 * round(float(np.median([x - 5.0 * o for x, (_, o) in zip(xs, named)])) / 5)
+    yards = [None if o is None else base + 5.0 * o for o in m.offsets]
+    known = [y for y in yards if y is not None]
+    if min(known) < 10 or max(known) > 110:
+        raise ValueError("the named lines run past a goal line")
+    return search_calibration(image, yards, marks=m)
+
+
 def draw_field_grid(
     image: np.ndarray, calib: FieldCalibration, color=(0, 255, 255), thickness: int = 2
 ) -> np.ndarray:

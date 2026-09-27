@@ -143,3 +143,9 @@ def test_a_slow_ramp_in_noisy_tracks_lands_late_but_close():
     det = detect_snap(pos, los=LOS)
     assert det.frame is not None
     assert 0 <= det.frame - 12 <= 3
+
+
+def test_a_line_already_moving_when_the_window_starts_is_not_the_snap():
+    pos = _play(snap_frame=-3, n_frames=12)  # the window starts after the snap
+    det = detect_snap(pos, los=LOS)
+    assert det.frame is None

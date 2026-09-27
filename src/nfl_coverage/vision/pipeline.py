@@ -40,9 +40,10 @@ from nfl_coverage.config import FIELD_LENGTH, FIELD_WIDTH
 from nfl_coverage.features.alignment import snapshot_features
 from nfl_coverage.features.movement import post_snap_features
 from nfl_coverage.vision.formation import Formation, infer_formation
-from nfl_coverage.vision.homography import FieldCalibration
+from nfl_coverage.vision.homography import FieldCalibration, on_field
 from nfl_coverage.vision.snap import SnapDetection, detect_snap, field_positions
 from nfl_coverage.vision.track import (
+    ChainedCalibration,
     SideAssignment,
     SnapBodies,
     TrackedFrame,
@@ -60,7 +61,11 @@ JPEG_QUALITY = 92
 
 
 class ReadError(ValueError):
-    """The clip cannot be read as asked (no snap found, no offense side, ...)."""
+    """The clip cannot be read as asked; `needs` names the value a person can give."""
+
+    def __init__(self, message: str, needs: str):
+        super().__init__(message)
+        self.needs = needs  # 'snap' / 'offense'
 
 
 @dataclass
@@ -162,7 +167,7 @@ def carry_calibration(
     survive): calibrate a frame inside the window then.
     """
     from nfl_coverage.vision.clip import transfer_calibration
-    from nfl_coverage.vision.fieldlines import find_marks, search_calibration
+    from nfl_coverage.vision.fieldlines import refit_from_paint
 
     notes: list[str] = []
     if abs(t_to - t_from) < 1e-3:
@@ -182,27 +187,111 @@ def carry_calibration(
             ) from e
         prev_t, prev = t, img
     notes.append(f"calibration carried {t_from:.1f} s -> {t_to:.1f} s in {len(ts)} hops")
-    marks = find_marks(prev)
-    named = [(ln, o) for ln, o in zip(marks.lines, marks.offsets) if o is not None]
-    if len(named) >= 2:
-        ref = marks.ref_y
-        xs = [float(cur.to_field(np.float32([[ln.x_at(ref), ref]]))[0, 0]) for ln, _ in named]
-        base = 5.0 * round(float(np.median([x - 5.0 * o for x, (_, o) in zip(xs, named)])) / 5)
-        yards = [None if o is None else base + 5.0 * o for o in marks.offsets]
-        known = [y for y in yards if y is not None]
-        if min(known) >= 10 and max(known) <= 110:
+    try:
+        refit = refit_from_paint(prev, cur)
+    except ValueError as e:
+        notes.append(f"kept the carried calibration (refit at {t_to:.1f} s failed: {e})")
+        return cur, notes
+    notes.append(
+        f"refit at {t_to:.1f} s on {len(refit.best.pixel)} landmarks ({refit.n_rows} field rows)"
+    )
+    if refit.warning:
+        notes.append(refit.warning)
+    return refit.best.calibration, notes
+
+
+REANCHOR_EVERY = 1.0  # s between drift checks along the tracked window
+REANCHOR_DRIFT = 0.4  # yd off the 5-yd grid that triggers a refit on the frame's own paint
+REANCHOR_GAIN = 0.1  # yd the refit must improve on the chain to replace it
+
+
+def reanchored_chain(
+    frames: list[TrackedFrame],
+    anchor: FieldCalibration,
+    anchor_i: int,
+    keyframes: dict[int, FieldCalibration],
+    step: float,
+) -> ChainedCalibration:
+    """Chain the anchor through the window, refitting wherever the chain drifts.
+
+    Frame-to-frame transfers accumulate error (clip 1531a slid 2.2 yd in 5 s).
+    Walking out from the anchor about once a second, a frame whose own yard lines
+    sit REANCHOR_DRIFT off the chained grid is refit on its paint, named by the
+    chained calibration, and becomes a keyframe the chain restarts from. Checking
+    often keeps the drift far under the 2.5 yd at which the naming would slip.
+
+    Only the along-field position is corrected: that is what the yard lines
+    measure. A refit on a hash-only frame can move the depth toward the sidelines
+    by a yard with nothing to check it against. The drift built up gradually, so
+    the correction is spread back linearly over the frames since the previous
+    anchor. Applied in one frame it moves every body at once, and the snap
+    detector reads that as the line firing.
+    """
+    from nfl_coverage.vision.fieldlines import find_marks, grid_drift, refit_from_paint
+
+    kf = dict(keyframes)
+    chain = chain_calibrations(frames, anchor, anchor_i, kf)
+    every = max(1, round(REANCHOR_EVERY / step))
+    walks = [range(anchor_i + every, len(frames), every), range(anchor_i - every, -1, -every)]
+    corrections: list[tuple[int, int, np.ndarray]] = []  # (previous anchor, keyframe, C)
+    notes: list[str] = []
+    for walk in walks:
+        prev = anchor_i
+        for i in walk:
+            if i in kf:
+                prev = i
+                continue
+            img = frames[i].image
+            marks = find_marks(img)
+            drift = grid_drift(img, chain.calibrations[i], marks)
+            if not drift >= REANCHOR_DRIFT:  # NaN: no lines to check against
+                continue
             try:
-                refit = search_calibration(prev, yards, marks=marks)
-                cur = refit.best.calibration
-                notes.append(
-                    f"refit at {t_to:.1f} s on {len(refit.best.pixel)} landmarks "
-                    f"({refit.n_rows} field rows)"
-                )
-                if refit.warning:
-                    notes.append(refit.warning)
+                refit = refit_from_paint(img, chain.calibrations[i], marks).best.calibration
             except ValueError as e:
-                notes.append(f"kept the carried calibration (refit at {t_to:.1f} s failed: {e})")
-    return cur, notes
+                notes.append(f"{frames[i].t:.1f} s drifts {drift:.2f} yd; refit failed ({e})")
+                continue
+            c = along_field_correction(chain.calibrations[i], refit, img.shape[:2])
+            fixed = corrected(chain.calibrations[i], c)
+            after = grid_drift(img, fixed, marks)
+            if not after < drift - REANCHOR_GAIN:
+                continue
+            corrections.append((prev, i, c))
+            kf[i] = fixed
+            chain = chain_calibrations(frames, anchor, anchor_i, kf)
+            notes.append(f"re-anchored at {frames[i].t:.1f} s: drift {drift:.2f} -> {after:.2f} yd")
+            prev = i
+    calibs = list(chain.calibrations)
+    for prev, i, c in corrections:
+        n = abs(i - prev)
+        for k in range(1, n):
+            j = prev + k if i > prev else prev - k
+            w = k / n
+            calibs[j] = corrected(calibs[j], (1 - w) * np.eye(3) + w * c)
+    return ChainedCalibration(calibs, chain.notes + notes)
+
+
+def along_field_correction(
+    old: FieldCalibration, new: FieldCalibration, shape: tuple[int, int]
+) -> np.ndarray:
+    """Field-to-field map x -> a x + b y + c (y kept) taking `old` to `new` over the frame."""
+    h, w = shape
+    gx, gy = np.meshgrid(np.linspace(0.05 * w, 0.95 * w, 12), np.linspace(0.05 * h, 0.95 * h, 9))
+    px = np.column_stack([gx.ravel(), gy.ravel()]).astype(np.float32)
+    a, b = old.to_field(px), new.to_field(px)
+    ok = on_field(a) & on_field(b)
+    if ok.sum() < 6:
+        return np.eye(3)
+    design = np.column_stack([a[ok], np.ones(int(ok.sum()))])
+    coef, *_ = np.linalg.lstsq(design, b[ok, 0], rcond=None)
+    return np.array([coef, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+
+
+def corrected(calib: FieldCalibration, c: np.ndarray) -> FieldCalibration:
+    """`calib` followed by a field-to-field correction; its landmarks move with it."""
+    m = c @ calib.matrix
+    fp = cv2.perspectiveTransform(calib.pixel_points.reshape(-1, 1, 2), m).reshape(-1, 2)
+    return FieldCalibration(calib.pixel_points, fp.astype(np.float32), m)
 
 
 def track_frames(
@@ -231,7 +320,7 @@ def track_frames(
     times = np.array([f.t for f in frames])
     anchor_i = int(np.argmin(np.abs(times - anchor_t)))
     kf = {int(np.argmin(np.abs(times - t))): c for t, c in (keyframes or {}).items()}
-    chain = chain_calibrations(frames, anchor, anchor_i, kf)
+    chain = reanchored_chain(frames, anchor, anchor_i, kf, step)
     return TrackedClip(frames, chain.calibrations, step, list(chain.notes))
 
 
@@ -345,7 +434,8 @@ def read_tracked(
     else:
         raise ReadError(
             "no snap found (" + "; ".join(det.reasons) + "): give the snap time, or start "
-            "the window at least 0.5 s before the snap"
+            "the window at least 0.5 s before the snap",
+            needs="snap",
         )
 
     bodies = snap_bodies(frames[snap_i], calibs[snap_i])
@@ -374,7 +464,8 @@ def read_tracked(
     offense = offense or form.offense
     if offense is None:
         raise ReadError(
-            "the offense side is not readable from the formation (" + form.reasons[0] + "): give it"
+            "the offense side is not readable from the formation (" + form.reasons[0] + "): give it",
+            needs="offense",
         )
     los = los if los is not None else form.los
     ball_y = ball_y if ball_y is not None else form.ball_y
