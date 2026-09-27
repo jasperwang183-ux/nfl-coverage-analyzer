@@ -92,6 +92,21 @@
   .timeline .mark.snap { background: #e0a800; } .timeline .mark.played { background: var(--def); }
   .timeline .mark.now { background: var(--ink); width: 2px; }
   .legend span { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: 0; }
+  .read .call { font-size: 22px; font-weight: 650; margin: 2px 0 0; }
+  .read .when { color: var(--muted); font-size: 13px; font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .meter { display: inline-flex; gap: 3px; vertical-align: -1px; margin-right: 6px; }
+  .meter span { width: 22px; height: 8px; border-radius: 2px; background: var(--line); }
+  .meter.high span { background: var(--high); }
+  .meter.medium span:nth-child(-n+2) { background: var(--medium); }
+  .meter.low span:first-child { background: var(--low); }
+  .verdictRow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .verdictRow select { width: auto; max-width: 14em; }
+  .verdictRow input[type=text] { width: 16em; }
+  .status { display: flex; gap: 12px; align-items: center; }
+  .status .progress { flex: 1; max-width: 320px; }
+  details#adjust > summary { font-size: 15px; font-weight: 650; color: var(--ink); }
+  details#adjust[open] > summary { margin-bottom: 12px; }
+  .part { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 14px; }
   @media (max-width: 640px) { header { padding: 12px 16px; } section.card { padding: 14px; } .thumb { flex-basis: 120px; } }
 </style>
 </head>
@@ -106,85 +121,106 @@
 <main>
   <section class="card" id="uploadCard">
     <h2>Upload a play</h2>
-    <p class="hint">An mp4 of one play from an elevated all-22 angle, a few seconds before the snap through the throw.</p>
+    <p class="hint">An mp4 of one play from an elevated all-22 angle, a second or more before the snap through the throw. The yard lines are found and named, the players tracked and the coverage read with no further input.</p>
     <div class="drop" id="drop">Drop an mp4 here, or <label style="color:var(--accent);cursor:pointer"><input type="file" id="file" accept="video/mp4,video/*" class="hidden">choose a file</label></div>
     <div class="row hidden" id="uploading"><div class="progress" style="flex:1"><div id="upBar"></div></div><span class="muted">uploading and sampling frames...</span></div>
   </section>
 
   <div id="clipView" class="hidden">
     <section class="card">
+      <div class="status"><b id="stageLine"></b><div class="progress hidden" id="progressWrap"><div id="progBar"></div></div></div>
+      <div id="stageMsg"></div>
+    </section>
+
+    <section class="card">
       <div class="stage"><video id="video" controls preload="metadata"></video><canvas id="overlay"></canvas></div>
-      <div class="timeline" id="timeline" title="Click to seek. Shaded: the play window; yellow: the snap; red: the played read."></div>
+      <div class="timeline" id="timeline" title="Click to seek. Shaded: the tracked window; yellow: the snap; red: the post-snap read."></div>
       <div class="row">
-        <button class="ghost hidden" id="toSnap">Jump to the snap</button><button class="ghost hidden" id="toPlayed">Jump to the played read</button>
+        <button class="ghost hidden" id="toSnap">Jump to the snap</button><button class="ghost hidden" id="toPlayed">Jump to the post-snap read</button>
         <label class="hidden" id="overlayToggle"><input type="checkbox" id="showOverlay" checked> draw the read on the video</label>
         <span class="legend muted hidden" id="overlayLegend" style="font-size:13px"><span style="background:var(--off)"></span>offense<span style="background:var(--def)"></span>defense<span style="background:#ffd400"></span>deep defenders<span style="background:#aaa"></span>line</span>
       </div>
     </section>
 
-    <section class="card hidden" id="resultCard"></section>
+    <div id="reads" class="hidden">
+      <div class="grid2">
+        <section class="card read" id="preCard"></section>
+        <section class="card read" id="postCard"></section>
+      </div>
+      <section class="card" id="disguiseCard"></section>
+    </div>
 
     <section class="card">
-      <h2><span class="step">1</span>Pick a still pre-snap frame</h2>
-      <p class="hint">The frame the field is calibrated on. The suggested one is the last still frame before the play moves. Motion is the bar under each frame.</p>
-      <div class="strip" id="strip"></div>
-    </section>
+      <details id="adjust">
+        <summary>Adjust: the frame, the yard lines, the play window, the snap and the offense</summary>
+        <div id="overrides"></div>
 
-    <section class="card hidden" id="linesCard">
-      <h2><span class="step">2</span>Name the yard lines</h2>
-      <p class="hint" id="linesHint"></p>
-      <img class="frame" id="linesImg" alt="Detected yard lines, numbered from the left">
-      <div class="row">
-        <label>Line</label>
-        <select id="namedLine"></select>
-        <label>is the painted</label>
-        <select id="firstPainted"></select>
-        <label>and the numbers to its right</label>
-        <select id="goingUp"><option value="1">go up</option><option value="0">go down</option></select>
-      </div>
-      <p class="hint">Pick any line you can read a number on — the one through a painted 10, 20, 30... is easiest. The others follow 5 yards apart; a line the spacing says is not a yard line (the edge of end-zone paint, an overlay) is marked ✕ and left out.</p>
-      <div class="chips" id="yardChips"></div>
-      <details style="margin-top:8px"><summary>Lines missed or wrong?</summary>
-        <div class="row"><label><input type="checkbox" id="sensitive"> search harder for faint or short lines</label><button class="ghost" id="redetect">Detect again</button></div>
-        <div class="row"><label>Or give each line's field x (0-120, left to right; - for not a yard line):</label><input type="text" id="yardsText" style="width:22em" placeholder="e.g. 50, 55, -, 60, 65"></div>
+        <div class="part">
+          <h2><span class="step">1</span>Pick a still pre-snap frame</h2>
+          <p class="hint">The frame the field is calibrated on. The suggested one is the last still frame before the play moves. Motion is the bar under each frame.</p>
+          <div class="strip" id="strip"></div>
+        </div>
+
+        <div class="part hidden" id="linesCard">
+          <h2><span class="step">2</span>Name the yard lines</h2>
+          <p class="hint" id="linesHint"></p>
+          <div id="namingNote"></div>
+          <img class="frame" id="linesImg" alt="Detected yard lines, numbered from the left">
+          <div class="row">
+            <label>Line</label>
+            <select id="namedLine"></select>
+            <label>is the painted</label>
+            <select id="firstPainted"></select>
+            <label>and the numbers to its right</label>
+            <select id="goingUp"><option value="1">go up</option><option value="0">go down</option></select>
+          </div>
+          <p class="hint">Pick any line you can read a number on — the one through a painted 10, 20, 30... is easiest. The others follow 5 yards apart; a line the spacing says is not a yard line (the edge of end-zone paint, an overlay) is marked ✕ and left out.</p>
+          <div class="chips" id="yardChips"></div>
+          <details style="margin-top:8px"><summary>Lines missed or wrong?</summary>
+            <div class="row"><label><input type="checkbox" id="sensitive"> search harder for faint or short lines</label><button class="ghost" id="redetect">Detect again</button></div>
+            <div class="row"><label>Or give each line's field x (0-120, left to right; - for not a yard line):</label><input type="text" id="yardsText" style="width:22em" placeholder="e.g. 50, 55, -, 60, 65"></div>
+          </details>
+          <div class="row"><button id="fitBtn">Fit the field</button><span class="muted" id="fitMsg"></span></div>
+          <div id="fitWarn"></div>
+          <div id="gridWrap" class="hidden">
+            <img class="frame" id="gridImg" alt="The fitted field drawn over the frame">
+            <p class="hint">The yellow grid should sit on the painted yard lines, hashes and sidelines wherever players stand, and its 10s on the lines through painted numbers. Magenta circles are the landmarks the fit used (every 1-yard hash tick it found). If the 10s are off by a line, name a line and fit again.</p>
+          </div>
+        </div>
+
+        <div class="part hidden" id="analyzeCard">
+          <h2><span class="step">3</span>Analyze the play again</h2>
+          <p class="hint">Scrub the video above and press <b>here</b> to set each end, or type the times. Start the window at least half a second before the snap (the snap is found from the offensive line firing) and run it up to 5 s after it: the post-snap read is taken between 2 and 5 s after the snap. It does not have to include the frame you calibrated: the calibration is carried along the clip to the window's first frame and refit there.</p>
+          <div class="row">
+            <label>From</label><input type="number" id="winStart" step="0.1" min="0"><button class="ghost" id="startHere" title="Use the video's current time">here</button>
+            <label>to</label><input type="number" id="winEnd" step="0.1" min="0"><button class="ghost" id="endHere" title="Use the video's current time">here</button><label>s</label>
+            <label>Detection size</label><select id="imgsz"><option value="1920">1920 (film)</option><option value="1280">1280 (faster)</option></select>
+            <button id="analyzeBtn">Analyze</button>
+          </div>
+        </div>
+
+        <div class="part hidden" id="imagesPart"></div>
       </details>
-      <div class="row"><button id="fitBtn">Fit the field</button><span class="muted" id="fitMsg"></span></div>
-      <div id="fitWarn"></div>
-      <div id="gridWrap" class="hidden">
-        <img class="frame" id="gridImg" alt="The fitted field drawn over the frame">
-        <p class="hint">The yellow grid is labeled with painted yard numbers: they should sit on the painted numbers, and the grid on the painted yard lines, hashes and sidelines wherever players stand. Magenta circles are the landmarks the fit used (every 1-yard hash tick it found). If the numbers are off by a line, fix the painted number and fit again.</p>
-      </div>
-    </section>
-
-    <section class="card hidden" id="analyzeCard">
-      <h2><span class="step">3</span>Analyze the play</h2>
-      <p class="hint">Scrub the video above and press <b>here</b> to set each end, or type the times. Start the window at least half a second before the snap (the snap is found from the offensive line firing) and run it through the coverage declaring, about 2.5 s after the snap. It does not have to include the frame you calibrated: the calibration is carried along the clip to the window's first frame and refit there.</p>
-      <div class="row">
-        <label>From</label><input type="number" id="winStart" step="0.1" min="0"><button class="ghost" id="startHere" title="Use the video's current time">here</button>
-        <label>to</label><input type="number" id="winEnd" step="0.1" min="0"><button class="ghost" id="endHere" title="Use the video's current time">here</button><label>s</label>
-        <label>Detection size</label><select id="imgsz"><option value="1920">1920 (film)</option><option value="1280">1280 (faster)</option></select>
-        <button id="analyzeBtn">Analyze</button>
-      </div>
-      <div id="progressWrap" class="hidden"><div class="progress"><div id="progBar"></div></div><p class="hint" id="progMsg"></p></div>
-      <div id="stageMsg"></div>
     </section>
   </div>
 </main>
 
 <script>
 const $ = (id) => document.getElementById(id);
-let clip = null, pickedT = null, poller = null;
+const ACTIVE = ["calibrating", "queued", "tracking", "reading"];
+let clip = null, pickedT = null, poller = null, calls = null, linesFor = null;
 
 function esc(s) { return String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 function conf(c) { return c ? `<span class="conf ${esc(c)}">${esc(c)}</span>` : ""; }
 function fmt(x, d = 1) { return x === null || x === undefined ? "—" : Number(x).toFixed(d); }
 function file(name) { return `/api/clips/${clip.id}/files/${name}?v=${Date.now()}`; }
 function painted(x) { return Math.round(x <= 60 ? x - 10 : 110 - x); }
+function plural(n, one, many) { return `${n} ${n === 1 ? one : many}`; }
 
 async function api(path, opts = {}) {
   const res = await fetch(path, opts);
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.detail || res.statusText);
+  if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : res.statusText);
   return body;
 }
 function post(path, data) {
@@ -218,23 +254,20 @@ $("recent").onchange = (e) => e.target.value && openClip(e.target.value);
 
 async function openClip(id) {
   clip = await api(`/api/clips/${id}`);
+  calls = calls || await api("/api/calls").catch(() => ({ shells: [], variants: [], other: "Other" }));
   history.replaceState(null, "", `/?clip=${id}`);
   $("uploadCard").classList.add("hidden"); $("clipView").classList.remove("hidden");
   $("clipName").textContent = clip.name;
   $("video").src = `/api/clips/${id}/video`;
+  linesFor = null;
   buildStrip();
   $("winStart").value = clip.window.start; $("winEnd").value = clip.window.end;
-  if (clip.calibration) {
-    pickedT = clip.calibration.t;
-    await showLines(clip.calibration.t, false);
-    showGrid(clip.calibration);
-  }
   render();
-  if (["queued", "calibrating", "tracking", "reading"].includes(clip.stage)) startPolling();
+  if (ACTIVE.includes(clip.stage)) startPolling();
   loadRecent();
 }
 
-// ---------------------------------------------------------------- step 1: frame
+// ---------------------------------------------------------------- adjust 1: frame
 function buildStrip() {
   const max = Math.max(1, ...clip.samples.map((s) => s.score));
   $("strip").innerHTML = clip.samples.map((s) => `
@@ -245,15 +278,13 @@ function buildStrip() {
       <div class="cap"><span>${s.t.toFixed(1)} s</span><span>motion ${s.score.toFixed(0)}</span></div>
     </button>`).join("");
   $("strip").querySelectorAll(".thumb").forEach((b) => b.onclick = () => showLines(Number(b.dataset.t), true));
-  const sel = $("strip").querySelector(`[data-i="${clip.suggested_sample}"]`);
-  if (sel && !clip.calibration) sel.scrollIntoView({ inline: "center", block: "nearest" });
 }
 function markSelected(t) {
   $("strip").querySelectorAll(".thumb").forEach((b) => b.classList.toggle("sel", Math.abs(Number(b.dataset.t) - t) < 1e-3));
 }
 
-// ---------------------------------------------------------------- step 2: lines + fit
-async function showLines(t, resetGrid) {
+// ---------------------------------------------------------------- adjust 2: lines + fit
+async function showLines(t, picked) {
   pickedT = t; markSelected(t);
   $("linesCard").classList.remove("hidden");
   $("linesHint").textContent = "Finding yard lines...";
@@ -268,8 +299,10 @@ async function showLines(t, resetGrid) {
         (stray ? ` (and ${stray} line${stray > 1 ? "s" : ""} that ${stray > 1 ? "are" : "is"} not a yard line, marked ✕)` : "") + "."
       : `Found ${r.n_yard_lines} yard line${r.n_yard_lines === 1 ? "" : "s"} — at least 2 are needed. Try another frame, or search harder below.`;
   } catch (e) { $("linesHint").textContent = "Line detection failed: " + e.message; }
-  if (resetGrid) { $("gridWrap").classList.add("hidden"); $("fitMsg").textContent = ""; }
-  $("linesCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  if (picked) {
+    $("gridWrap").classList.add("hidden"); $("fitMsg").textContent = ""; $("namingNote").innerHTML = "";
+    $("linesCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 }
 $("redetect").onclick = () => pickedT !== null && showLines(pickedT, true);
 for (let y = 0; y <= 50; y += 5) $("firstPainted").add(new Option(y === 0 ? "goal line (0)" : String(y), y));
@@ -308,6 +341,7 @@ $("fitBtn").onclick = async () => {
   try {
     const cal = await post(`/api/clips/${clip.id}/calibrate`, body);
     clip = await api(`/api/clips/${clip.id}`);
+    linesFor = cal.t;
     showGrid(cal); render();
   } catch (e) { $("fitMsg").innerHTML = `<span style="color:var(--low)">${esc(e.message)}</span>`; }
   finally { $("fitBtn").disabled = false; }
@@ -319,6 +353,9 @@ function showGrid(cal) {
     (cal.n_number_edges != null ? ` (${cal.n_number_edges} painted-number edges)` : "") +
     `; mean error ${cal.mean_error.toFixed(2)} yd (max ${cal.max_error.toFixed(2)}).`;
   $("fitWarn").innerHTML = [cal.warning, cal.depth_warning].filter(Boolean).map((w) => `<div class="note">${esc(w)}</div>`).join("");
+  $("namingNote").innerHTML = cal.naming !== "auto" ? ""
+    : `<div class="note">Named automatically at ${cal.t.toFixed(1)} s. The read measures depths from the line of scrimmage, so the yard numbers below are arbitrary; only which lines are the 10s matters` +
+      (cal.edge_margin === 0 ? " — and the painted numbers could not tell that here: check the grid below." : ".") + "</div>";
   if (cal.yards) {
     const k = cal.yards.findIndex((y) => y !== null && y !== undefined);
     if (k >= 0) {
@@ -331,14 +368,24 @@ function showGrid(cal) {
     }
   }
 }
+async function loadCalibration() {
+  // the naming UI is filled only while Adjust is open: it runs line detection on the server
+  const cal = clip.calibration;
+  if (!cal || !$("adjust").open || linesFor === cal.t) return;
+  linesFor = cal.t;
+  await showLines(cal.t, false);
+  showGrid(cal);
+}
+$("adjust").addEventListener("toggle", () => { loadCalibration(); if (!$("adjust").open) return; if (!clip.calibration) $("strip").querySelector(`[data-i="${clip.suggested_sample}"]`)?.scrollIntoView({ inline: "center", block: "nearest" }); });
 
-// ---------------------------------------------------------------- step 3: analyze
+// ---------------------------------------------------------------- adjust 3: analyze
 $("analyzeBtn").onclick = async () => {
   try {
     clip = await post(`/api/clips/${clip.id}/analyze`, {
       start: Number($("winStart").value), end: Number($("winEnd").value), imgsz: Number($("imgsz").value),
     });
     render(); startPolling();
+    window.scrollTo({ top: 0, behavior: "smooth" });
   } catch (e) { $("stageMsg").innerHTML = `<div class="note err">${esc(e.message)}</div>`; }
 };
 function startPolling() {
@@ -346,24 +393,35 @@ function startPolling() {
   poller = setInterval(async () => {
     clip = await api(`/api/clips/${clip.id}`).catch(() => clip);
     render();
-    if (!["queued", "calibrating", "tracking", "reading"].includes(clip.stage)) clearInterval(poller);
+    if (!ACTIVE.includes(clip.stage)) clearInterval(poller);
   }, 1500);
 }
 
 // ---------------------------------------------------------------- render
+function stageText(c) {
+  const pct = `${Math.round(100 * (c.progress || 0))}%`;
+  if (c.stage === "calibrating") return c.calibration ? "Carrying the calibration to the play window..." : "Finding and naming the yard lines...";
+  if (c.stage === "queued") return "Queued...";
+  if (c.stage === "tracking") return `Tracking the players: ${pct}`;
+  if (c.stage === "reading") return "Reading the snap, the formation and the coverage...";
+  if (c.stage === "done") return "Done";
+  if (c.stage === "needs_input") return "Needs a person";
+  if (c.stage === "error") return "Analysis failed";
+  if (c.stage === "calibrated") return "Field fitted: analyze the play under Adjust";
+  return "Uploaded: pick a frame and name the yard lines under Adjust";
+}
 function render() {
-  const busy = ["queued", "calibrating", "tracking", "reading"].includes(clip.stage);
-  $("analyzeCard").classList.toggle("hidden", !clip.calibration);
-  $("analyzeBtn").disabled = busy;
-  $("progressWrap").classList.toggle("hidden", !busy);
+  const busy = ACTIVE.includes(clip.stage);
+  $("stageLine").textContent = stageText(clip);
+  $("progressWrap").classList.toggle("hidden", clip.stage !== "tracking");
   $("progBar").style.width = `${Math.round(100 * (clip.progress || 0))}%`;
-  $("progMsg").textContent = clip.stage === "tracking"
-    ? `Tracking players: ${Math.round(100 * (clip.progress || 0))}%`
-    : clip.stage === "reading" ? "Reading the snap, the formation and the coverage..."
-    : clip.stage === "calibrating" ? "Carrying the calibration from the calibrated frame to the window..." : "Queued...";
-  $("stageMsg").innerHTML = clip.stage === "error" ? `<div class="note err">Analysis failed: ${esc(clip.message)}</div>`
+  $("stageMsg").innerHTML = clip.stage === "error" ? `<div class="note err">${esc(clip.message)}</div>`
     : clip.stage === "needs_input" ? needsInput(clip) : "";
   wireNeeds();
+  if (clip.stage === "needs_input" || clip.stage === "uploaded") $("adjust").open = true;
+  $("analyzeCard").classList.toggle("hidden", !clip.calibration);
+  $("analyzeBtn").disabled = busy;
+  loadCalibration();
   renderResult(clip.result);
   drawTimeline();
 }
@@ -375,7 +433,7 @@ function needsInput(c) {
     <div class="hint">Pause the video on the frame the ball is snapped and press <b>here</b>. The tracking is kept, so this takes seconds.</div></div>`;
   if (c.needs === "offense") return `<div class="note">${msg}
     <div class="row"><label>The offense is on the</label><select id="needOffense"><option value="left">left</option><option value="right">right</option></select><button id="needGo">Read with this side</button><span class="muted" id="needMsg"></span></div></div>`;
-  if (c.needs === "calibration") return `<div class="note">${msg}<div class="hint">Pick a pre-snap frame inside the play window in step 1 and fit it, then analyze again.</div></div>`;
+  if (c.needs === "calibration") return `<div class="note">${msg}<div class="hint">Under Adjust below: pick a still pre-snap frame, name one yard line, fit, then analyze.</div></div>`;
   return `<div class="note">${msg}</div>`;
 }
 function wireNeeds() {
@@ -456,78 +514,129 @@ function loop() { paint(); if (!$("video").paused) requestAnimationFrame(loop); 
 window.addEventListener("resize", paint);
 $("showOverlay").addEventListener("change", paint);
 
-function readCard(title, r) {
-  if (!r) return `<div class="sub"><h3>${title}</h3><div class="muted">not read</div></div>`;
-  return `<div class="sub"><h3>${title} · ${esc(r.frame)}</h3>
-    <div class="big">${esc(r.shell)} ${conf(r.confidence)}</div>
+// ---------------------------------------------------------------- the reads
+function confidence(c) {
+  return `<div style="margin:6px 0 2px"><span class="meter ${esc(c)}"><span></span><span></span><span></span></span><span class="conf ${esc(c)}">${esc(c)} confidence</span></div>`;
+}
+function rotationText(r) {
+  // the defender who moved most between the snap and the post-snap read, and what the moves add up to
+  if (!r || r.max_move == null || r.max_move < 3) return "";
+  const dd = r.rotator_dd, parts = [];
+  if (r.n_came_down) parts.push(`${plural(r.n_came_down, "deep defender", "deep defenders")} came down`);
+  if (r.n_bailed_inside) parts.push(`${plural(r.n_bailed_inside, "defender", "defenders")} from the box or slot bailed deep`);
+  if (r.n_corner_bail) parts.push(`${plural(r.n_corner_bail, "corner", "corners")} bailed deep`);
+  return `After the snap one defender ${dd >= 0 ? "dropped" : "came up"} ${Math.abs(dd).toFixed(1)} yd` +
+    (parts.length ? `; ${parts.join(", ")}` : "") + ".";
+}
+function verdict(phase, r) {
+  const saved = (clip.corrections || {})[phase];
+  const options = [...calls.shells, ...calls.variants, calls.other]
+    .map((c) => `<option${saved && saved.call === c ? " selected" : ""}>${esc(c)}</option>`).join("");
+  const said = !saved ? "" : saved.correct ? "You marked this read correct."
+    : `You marked this read wrong: ${esc(saved.call)}${saved.note ? ` (${esc(saved.note)})` : ""}.`;
+  return `<div class="verdictRow">
+      <span class="muted">Is this right?</span>
+      <button class="ghost" data-phase="${phase}" data-correct="1">Correct</button>
+      <button class="ghost" data-phase="${phase}" data-correct="0">Wrong</button>
+      <span class="muted" id="said-${phase}">${said}</span>
+    </div>
+    <div class="verdictRow hidden" id="wrong-${phase}">
+      <label>It was</label><select id="call-${phase}">${options}</select>
+      <input type="text" id="note-${phase}" maxlength="2000" placeholder="note (optional)" value="${esc(saved && !saved.correct ? saved.note : "")}">
+      <button data-save="${phase}">Save</button>
+    </div>`;
+}
+async function sendVerdict(phase, correct) {
+  const body = { phase, correct };
+  if (!correct) {
+    body.call = $(`call-${phase}`).value;
+    const note = $(`note-${phase}`).value.trim();
+    if (note) body.note = note;
+  }
+  $(`said-${phase}`).textContent = "Saving...";
+  try {
+    await post(`/api/clips/${clip.id}/correction`, body);
+    clip = await api(`/api/clips/${clip.id}`);
+    render();
+  } catch (e) { $(`said-${phase}`).innerHTML = `<span style="color:var(--low)">${esc(e.message)}</span>`; }
+}
+function readCard(phase, title, when, r, extra = "") {
+  if (!r) return `<h3>${title}</h3><div class="muted">not read: the tracked window ends too soon after the snap</div>`;
+  return `<h3>${title} <span class="when">· ${esc(when)}</span></h3>
+    <div class="call">${esc(r.shell)}</div>
     <div>${esc(r.family)}</div>
-    <ul class="reasons">${(r.reasons || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`;
+    ${confidence(r.confidence)}
+    ${(r.confidence_why || []).length ? `<div class="muted why">${esc(r.confidence)} because ${r.confidence_why.map(esc).join("; ")}</div>` : ""}
+    <ul class="reasons">${(r.reasons || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+    ${extra}
+    ${verdict(phase, r)}`;
 }
 
 function renderResult(res) {
-  const card = $("resultCard");
   $("toSnap").classList.toggle("hidden", !res); $("toPlayed").classList.toggle("hidden", !res);
+  $("reads").classList.toggle("hidden", !res);
   loadOverlay();
-  if (!res) { card.classList.add("hidden"); return; }
-  card.classList.remove("hidden");
-  const rep = res.report, f = res.formation, inf = f.inferred, used = f.used, src = f.source;
-  const variant = (rep.variant || []).slice(0, 4);
+  renderAdjustResult(res);
+  if (!res) return;
+  const rep = res.report;
+  const after = res.played_frame.t - res.snap.t;
+  const variant = (rep.variant || []).slice(0, 3);
+  const rotation = rotationText(res.rotation);
+  const extra = (rotation ? `<p style="margin:10px 0 0">${esc(rotation)}</p>` : "") +
+    (variant.length ? `<h3 style="margin-top:14px">Exact coverage (the model, from the snap alignment)</h3>
+      <div class="bars">${variant.map(([c, p]) => `<div class="b"><span>${esc(c)}</span><div class="track"><div class="fill" style="width:${(100 * p).toFixed(0)}%"></div></div><span>${(100 * p).toFixed(0)}%</span></div>`).join("")}</div>
+      <div class="muted" style="font-size:13px">${conf(rep.variant_confidence)} the structure above is the reliable read; this is the model's best guess at the exact call</div>` : "");
+  $("preCard").innerHTML = readCard("pre", "Pre-snap read", `at the snap, ${fmt(res.snap.t)} s`, rep.shown);
+  $("postCard").innerHTML = readCard("post", "Post-snap read", `read at +${fmt(after)} s`, rep.played, extra);
   const caveats = [...new Set(rep.caveats || [])];
-  card.innerHTML = `
-    <h3>The read</h3>
+  $("disguiseCard").innerHTML = `<h3>Disguise</h3>
     <div class="verdict">${esc(rep.shown.shell)}<span class="arrow">→</span>${esc(rep.played ? rep.played.shell : "?")}</div>
-    <div>${esc(rep.disguise_text)}${rep.disguise_label ? ` <span class="chip">${esc(rep.disguise_label)} · ${rep.disguise_score.toFixed(2)}</span>` : ""}</div>
+    <div>${esc(rep.disguise_text)}</div>
     ${caveats.length ? `<div class="note"><b>Caveats</b><ul>${caveats.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}
-    ${res.warnings.length ? `<div class="note"><b>Your values disagree with the formation read</b><ul>${res.warnings.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}
-    <div class="grid2" style="margin-top:12px">
-      ${readCard("Shown at the snap", rep.shown)}
-      ${readCard("Played", rep.played)}
-      <div class="sub"><h3>Variant (model on the snap frame)</h3>
-        ${variant.length ? `<div class="bars">${variant.map(([c, p]) => `<div class="b"><span>${esc(c)}</span><div class="track"><div class="fill" style="width:${(100 * p).toFixed(0)}%"></div></div><span>${(100 * p).toFixed(0)}%</span></div>`).join("")}</div>
-        <div style="margin-top:4px">${conf(rep.variant_confidence)} <span class="muted">the structure above is the reliable read; this is the model's best guess at the exact coverage</span></div>`
-        : `<div class="muted">no model bundle found (models/still_shown.joblib)</div>`}
-      </div>
-      <div class="sub"><h3>Tracking</h3>
-        <div>${res.n_players_tracked} coverage players tracked; at the snap ${res.sides.offense} offense, ${res.sides.defense} defense, ${res.sides.line} line players set aside, ${res.sides.non_players} others.</div>
-        <div class="muted" style="margin-top:4px">Played shell declared at +${(res.played_frame.rel_frame / 10).toFixed(1)} s.</div>
-      </div>
-    </div>
+    ${res.warnings.length ? `<div class="note"><b>Your values disagree with the formation read</b><ul>${res.warnings.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}`;
+  document.querySelectorAll("[data-correct]").forEach((b) => b.onclick = () => {
+    if (b.dataset.correct === "1") sendVerdict(b.dataset.phase, true);
+    else $(`wrong-${b.dataset.phase}`).classList.remove("hidden");
+  });
+  document.querySelectorAll("[data-save]").forEach((b) => b.onclick = () => sendVerdict(b.dataset.save, false));
+  $("toSnap").onclick = () => { $("video").currentTime = res.snap.t; $("video").pause(); };
+  $("toPlayed").onclick = () => { $("video").currentTime = res.played_frame.t; $("video").pause(); };
+}
 
-    <h3 style="margin-top:18px">Snap and formation</h3>
-    <p class="hint">Inferred from the film. Type over any value and re-read — a few seconds, no re-tracking.</p>
+function renderAdjustResult(res) {
+  $("imagesPart").classList.toggle("hidden", !res);
+  if (!res) { $("overrides").innerHTML = ""; return; }
+  const f = res.formation, inf = f.inferred, used = f.used, src = f.source;
+  $("overrides").innerHTML = `
+    <h2>Snap and offense</h2>
+    <p class="hint">Inferred from the film. Type over a value and re-read — a few seconds, no re-tracking. ${res.n_players_tracked} coverage players tracked; at the snap ${res.sides.offense} offense, ${res.sides.defense} defense, ${res.sides.line} line players set aside, ${res.sides.non_players} others.</p>
     <table class="form">
       <tr><th>What</th><th>Inferred</th><th>Used</th><th>Your value</th></tr>
       <tr><td>Snap</td><td>${fmt(res.snap.detected_t)} s ${conf(res.snap.confidence)}</td><td>${fmt(res.snap.t)} s <span class="conf ${res.snap.source}">${res.snap.source}</span></td>
           <td><input type="number" id="ovSnap" step="0.1" placeholder="s"></td></tr>
       <tr><td>Offense side</td><td>${esc(inf.offense ?? "?")} ${conf(inf.offense_confidence)}</td><td>${esc(used.offense)} <span class="conf ${src.offense}">${src.offense}</span></td>
           <td><select id="ovOffense"><option value="">—</option><option value="left">left</option><option value="right">right</option></select></td></tr>
-      <tr><td>Line of scrimmage (field x)</td><td>${fmt(inf.los)} <span class="muted">(${fmt(inf.los_range[0])}–${fmt(inf.los_range[1])})</span> ${conf(inf.los_confidence)}</td><td>${fmt(used.los)} <span class="conf ${src.los}">${src.los}</span></td>
-          <td><input type="number" id="ovLos" step="0.1" placeholder="yd"></td></tr>
-      <tr><td>Ball (field y)</td><td>${fmt(inf.ball_y)} ${conf(inf.ball_y_confidence)}</td><td>${fmt(used.ball_y)} <span class="conf ${src.ball_y}">${src.ball_y}</span></td>
+      <tr><td>Ball (field y, 0-53.3)</td><td>${fmt(inf.ball_y)} ${conf(inf.ball_y_confidence)}</td><td>${fmt(used.ball_y)} <span class="conf ${src.ball_y}">${src.ball_y}</span></td>
           <td><input type="number" id="ovBall" step="0.1" placeholder="yd"></td></tr>
     </table>
     <div class="row"><button id="rereadBtn">Re-read</button><button class="ghost" id="resetBtn">Back to inferred</button><span class="muted" id="rereadMsg"></span></div>
-    <details><summary>Why these values</summary><ul class="reasons">${[...res.snap.reasons, ...inf.reasons].map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>
-
-    <div class="grid2" style="margin-top:16px">
+    <details><summary>Why these values</summary><ul class="reasons">${[...res.snap.reasons, ...inf.reasons].map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>`;
+  $("imagesPart").innerHTML = `<div class="grid2">
       <div><h3>Snap frame</h3><img class="frame" src="${file("snap.jpg")}" alt="The snap frame with every player boxed by side">
-        <div class="legend muted" style="font-size:13px;margin-top:4px"><span style="background:var(--off)"></span>offense<span style="background:var(--def)"></span>defense<span style="background:#aaa"></span>line (set aside)<span style="background:#fff;border:1px solid var(--line)"></span>other<span style="background:#ffe600"></span>LOS and ball</div></div>
+        <div class="legend muted" style="font-size:13px;margin-top:4px"><span style="background:var(--off)"></span>offense<span style="background:var(--def)"></span>defense<span style="background:#aaa"></span>line (set aside)<span style="background:#fff;border:1px solid var(--line)"></span>other<span style="background:#ffe600"></span>line of scrimmage and ball</div></div>
       <div><h3>Top-down</h3><img class="frame" style="background:#fff" src="${file("topdown.png")}" alt="Top-down render of the tracked play"></div>
     </div>`;
   const o = clip.overrides || {};
   if (o.snap_t != null) $("ovSnap").value = o.snap_t;
   if (o.offense) $("ovOffense").value = o.offense;
-  if (o.los != null) $("ovLos").value = o.los;
   if (o.ball_y != null) $("ovBall").value = o.ball_y;
   $("rereadBtn").onclick = () => reread(false);
   $("resetBtn").onclick = () => reread(true);
-  $("toSnap").onclick = () => { $("video").currentTime = res.snap.t; $("video").pause(); };
-  $("toPlayed").onclick = () => { $("video").currentTime = res.played_frame.t; $("video").pause(); };
 }
 
 async function reread(reset) {
   const num = (id) => (reset || $(id).value === "" ? null : Number($(id).value));
-  const body = { snap_t: num("ovSnap"), los: num("ovLos"), ball_y: num("ovBall"),
+  const body = { snap_t: num("ovSnap"), ball_y: num("ovBall"),
                  offense: reset || !$("ovOffense").value ? null : $("ovOffense").value };
   $("rereadBtn").disabled = true; $("rereadMsg").textContent = "Re-reading...";
   try {
