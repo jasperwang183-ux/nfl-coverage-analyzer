@@ -1,5 +1,35 @@
 # Session Handoff — updated 2026-09-27
 
+## Sequence model scored on the frozen holdout (2026-09-27)
+
+Branch `worktree-agent-a30822969fc9406b3` (remote `sequence-model`), not merged. Leakage
+review found none: `train_sequence.splits` drops the holdout weeks before choosing
+validation games, early stopping sees validation only; the pre-snap head is causal
+(cutting every post-snap frame changed its probabilities by exactly 0.0 on week 2);
+labels match `features.parquet` (8 classes). Trained on the RTX 5070: 40 epochs, best
+epoch 33, 296 s -> `models/sequence_v1.pt`. `verify.py bdb --checks sequence` (tag
+`sequence-v1`), scored ONCE, n = 8,234 holdout plays:
+
+| model | top-1 | top-2 | top-3 |
+|---|---|---|---|
+| majority class | 0.328 | | |
+| variant model (snap features) | 0.518 | 0.746 | 0.866 |
+| pre-snap head | 0.592 | 0.807 | 0.909 |
+| full-play head | 0.865 | 0.970 | 0.992 |
+
+Pre-snap 0.63 (2018) / 0.55 (2023: inferred snap, single pre-snap frame); full-play 0.87
+both. Biggest gains on Cover 6 (0.07 -> 0.80 full) and Cover 2 zone (0.26 -> 0.89);
+Cover 0 is the one class the variant model still wins pre-snap (0.68 vs 0.45).
+The heads disagree on 39.7% of plays; then the full-play head is right 80%, the pre-snap
+head 11%; when they agree the call is right 91%. Of 3,695 plays with the pre-snap head
+>= 60% confident, 21.7% change call and the full-play head is right on 79% of those:
+the disguise signal. Do not re-score on the holdout.
+
+Next: merge, wire `predict()` into `read_tracked` (pre-snap head -> pre-snap card, full-play
+head -> post-snap card, probabilities replace the structural reads' coarse levels), and
+run `verify.py film` before and after: the model has never seen real film tracks, and a
+clip starting after the snap gets a pre-snap read from its first frame.
+
 ## Automatic ingest: naming without a person, and the page plan (2026-09-27)
 
 **Naming QA.** Claude's 7 manifest namings were checked against the painted numbers
