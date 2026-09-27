@@ -161,7 +161,9 @@ walking out onto the slot pre-snap points to man or match.
   routes to declare, and 2.5 s of tracks is short). The model said Cover 2 zone.
 - **Officials at the LOS get sided.** Two static bodies about 23 yd out on each sideline
   at LOS depth (the head linesman and line judge) were tracked as defenders on 15-34-46 and
-  became the "widest defenders" in the reasons.
+  became the "widest defenders" in the reasons. Fixed in `vision/track.py` (4 yd snap
+  sideline margin, ruled-out ids stay out, sideline strays in the offense's backfield are not
+  sided); with them gone the played read names the press corner.
 - **Crops remove the corners**, so a safety becomes the "widest defender" and must clear
   `CORNER_DEEP_DEPTH` (12 yd, `analysis/report.py`) to count as deep.
 - **Tracker duplicates** can make one deep player two (1533: two "deep" ids 2.4 yd apart
