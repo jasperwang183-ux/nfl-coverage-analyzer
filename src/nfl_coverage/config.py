@@ -10,6 +10,7 @@ BDB2021 = DATA_RAW / "bdb2021"  # 2018 season, all pass plays, pre-snap frames; 
 BDB2026 = DATA_RAW / "bdb2026" / "114239_nfl_competition_files_published_analytics_final"
 
 MODELS_DIR = ROOT / "models"  # trained model bundles (gitignored — derived from competition data)
+SEQUENCE_MODEL = MODELS_DIR / "sequence_v1.pt"  # scored once on the frozen holdout; never re-score
 
 # Field dimensions in yards (x includes both end zones)
 FIELD_LENGTH = 120.0

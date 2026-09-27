@@ -331,6 +331,13 @@ def load(path: str | Path, device: str = "cpu") -> Bundle:
     return Bundle(model, list(ckpt["classes"]), ckpt.get("meta", {}))
 
 
+def load_if_present(path: str | Path) -> Bundle | None:
+    """The bundle on the GPU when there is one; None when the checkpoint is missing."""
+    if not Path(path).exists():
+        return None
+    return load(path, "cuda" if torch.cuda.is_available() else "cpu")
+
+
 # ------------------------------------------------------------------ inference
 
 

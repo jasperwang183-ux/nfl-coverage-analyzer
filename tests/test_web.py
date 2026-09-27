@@ -111,7 +111,12 @@ def test_naming_without_a_play_in_motion_tries_every_still_frame():
 
 @pytest.fixture()
 def client(tmp_path):
-    app = create_app(data_dir=tmp_path / "web", model_path=tmp_path / "none.joblib", auto=False)
+    app = create_app(
+        data_dir=tmp_path / "web",
+        model_path=tmp_path / "none.joblib",
+        auto=False,
+        sequence_path=tmp_path / "none.pt",
+    )
     return TestClient(app)
 
 
@@ -251,7 +256,13 @@ def test_an_upload_that_cannot_be_named_asks_a_person(tmp_path, monkeypatch):
         raise ValueError("only 1 yard lines found")
 
     monkeypatch.setattr("nfl_coverage.vision.fieldlines.auto_name", no_fit)
-    client = TestClient(create_app(data_dir=tmp_path / "web", model_path=tmp_path / "x.joblib"))
+    client = TestClient(
+        create_app(
+            data_dir=tmp_path / "web",
+            model_path=tmp_path / "x.joblib",
+            sequence_path=tmp_path / "x.pt",
+        )
+    )
     cid = _upload(client, tmp_path)
     meta = _wait(client, cid)
     assert meta["stage"] == "needs_input" and meta["needs"] == "calibration"
@@ -271,7 +282,13 @@ def test_an_upload_runs_on_to_tracking_and_reading_by_itself(tmp_path, monkeypat
 
     monkeypatch.setattr("nfl_coverage.web.app.auto_calibrate", named)
     monkeypatch.setattr("nfl_coverage.vision.pipeline.track_frames", lambda *a, **k: clip)
-    client = TestClient(create_app(data_dir=tmp_path / "web", model_path=tmp_path / "x.joblib"))
+    client = TestClient(
+        create_app(
+            data_dir=tmp_path / "web",
+            model_path=tmp_path / "x.joblib",
+            sequence_path=tmp_path / "x.pt",
+        )
+    )
     cid = _upload(client, tmp_path)
     meta = _wait(client, cid)
     assert meta["calibration"]["naming"] == "auto"
@@ -348,8 +365,10 @@ def test_corrections_are_logged_against_the_model_call(client, tmp_path, monkeyp
     recs = [json.loads(line) for line in log.read_text().splitlines()]
     keys = {"logged", "clip", "clip_id", "phase", "correct", "call", "note"}
     keys |= {"model_call", "model_confidence", "snap_t", "read_t"}
+    keys |= {"model_variant", "model_variant_confidence"}
     assert [set(rec) for rec in recs] == [keys, keys]
     post, pre = recs
+    assert post["model_variant"] is None  # no sequence model in this app
     assert post["clip"] == "play.mp4" and post["clip_id"] == cid
     assert (post["phase"], post["correct"], post["call"], post["note"]) == (
         "post",

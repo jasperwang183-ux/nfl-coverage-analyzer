@@ -31,8 +31,10 @@ import pandas as pd
 from nfl_coverage.analysis.disguise import RUN_FRAME, declared_frame, shell_rotation
 from nfl_coverage.analysis.report import (
     CoverageReport,
+    ModelRead,
     StructuralRead,
     disguise_text,
+    model_read,
     structural_read,
     variant_confidence,
 )
@@ -416,6 +418,31 @@ def _canonical(offense: str, los: float, ball_y: float | None) -> tuple[float, f
     return los_c, center
 
 
+def sequence_reads(
+    bundle, clip: TrackedClip, sides, snap_i: int, offense: str, step: float
+) -> tuple[ModelRead | None, ModelRead | None]:
+    """The sequence model's pre-snap and whole-play calls, or (None, None) if it can't read.
+
+    The model trained on all 22 players at 10 Hz, so it gets tracks with the line kept
+    (its LOS estimate comes from the offense) and only a 0.1 s grid.
+    """
+    if bundle is None or abs(step - 0.1) > 1e-6:
+        return None, None
+    from nfl_coverage.models import sequence  # deferred: torch import
+
+    tracks = canonical_tracks(
+        clip.frames, clip.calibrations, sides, snap_i, offense, step, drop_line=False
+    )
+    try:
+        p = sequence.predict(bundle, tracks)
+    except ValueError:
+        return None, None
+    source = bundle.meta.get("args", {}).get("name", "sequence model")
+    pre = model_read(source, p["pre_rel_frame"] * step, p["pre_variant"], p["pre_man_zone"])
+    post = model_read(source, p["last_rel_frame"] * step, p["variant"], p["man_zone"])
+    return pre, post
+
+
 def read_tracked(
     clip: TrackedClip,
     snap_t: float | None = None,
@@ -424,6 +451,7 @@ def read_tracked(
     ball_y: float | None = None,
     run_deep: float = RUN_DEEP_FILM,
     bundle: dict | None = None,
+    sequence_bundle=None,
 ) -> ClipRead:
     """Snap, formation, sides, tracks and the report; given values override inferred ones."""
     frames, calibs, step = clip.frames, clip.calibrations, clip.step
@@ -465,7 +493,9 @@ def read_tracked(
     offense = offense or form.offense
     if offense is None:
         raise ReadError(
-            "the offense side is not readable from the formation (" + form.reasons[0] + "): give it",
+            "the offense side is not readable from the formation ("
+            + form.reasons[0]
+            + "): give it",
             needs="offense",
         )
     los = los if los is not None else form.los
@@ -515,6 +545,7 @@ def read_tracked(
 
         ranked = predict_proba(bundle, snapshot_features(snap)).iloc[0]
         variant = [(str(k), float(v)) for k, v in ranked.sort_values(ascending=False).items()]
+    pre_model, post_model = sequence_reads(sequence_bundle, clip, sides, snap_i, offense, step)
     label = rot["shell_rotation_label"] or ""
     score = float(rot["shell_rotation_score"])
     report = CoverageReport(
@@ -526,6 +557,8 @@ def read_tracked(
         disguise_score=score,
         disguise_text=disguise_text(label, shown, played),
         caveats=list(clip.caveats) + list(shown_caveats) + played_caveats,
+        pre_model=pre_model,
+        post_model=post_model,
     )
     feats = post_snap_features(tracks, horizon=rf).iloc[0]
     features = {k: float(v) for k, v in feats.items() if k.startswith("post_")}

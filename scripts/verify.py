@@ -29,7 +29,7 @@ import tempfile
 import warnings
 from pathlib import Path
 
-from nfl_coverage.config import MODELS_DIR, ROOT
+from nfl_coverage.config import MODELS_DIR, ROOT, SEQUENCE_MODEL
 
 MANIFEST = ROOT / "samples" / "verify" / "clips.json"
 RUNS = ROOT / "data" / "verify" / "runs"
@@ -65,6 +65,9 @@ def cmd_film(args) -> None:
         from nfl_coverage.models.persist import load_bundle
 
         bundle = load_bundle(model)
+    from nfl_coverage.models.sequence import load_if_present
+
+    sequence_bundle = load_if_present(SEQUENCE_MODEL)
     clips = load_manifest(args.manifest)
     if args.only:
         clips = [c for c in clips if c["id"] in args.only]
@@ -72,7 +75,13 @@ def cmd_film(args) -> None:
     for c in clips:
         print(f"{c['id']}")
         r = verify_clip(
-            c, CACHE, bundle, retrack=args.retrack, imgsz=args.imgsz, auto_naming=args.auto_naming
+            c,
+            CACHE,
+            bundle,
+            retrack=args.retrack,
+            imgsz=args.imgsz,
+            auto_naming=args.auto_naming,
+            sequence_bundle=sequence_bundle,
         )
         results.append(r)
         for s in r["stages"]:
