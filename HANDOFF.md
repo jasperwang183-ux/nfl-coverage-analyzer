@@ -23,18 +23,20 @@ the session learned the hard way:
 - A full refit on a hash-only frame also moves depth (y) by up to a yard with nothing to
   check it; blended, that still made every body drift and fired a false snap at 14.2 s.
   The correction is now along the field only (`along_field_correction`: x -> ax+by+c, y
-  kept) because that is all the yard lines measure. This last variant was still being
-  verified at session end: run `verify.py film --tag reanchor-x` results vs `after-refactor`
-  and check the Dolphins snap is ~15.6 s (it is visibly set through 15.5, moving at 15.7).
+  kept) because that is all the yard lines measure. Verified (`reanchor-x` run): the
+  Dolphins snap is back to 15.63 s on both clips (the truth, read off the frames), clip 1
+  and clip 2 unchanged, 1531a grid 2.18 -> 0.06 yd, 1326 now reads (3 -> 7 offense) with
+  its snap moved 8.05 -> 4.26 s (not checked against the frames: do that first).
+  9/11 clips produce a read (1531a: no snap; 1531b: 5 offense).
 - Subtracting the off-line bodies' median motion in the snap detector was tried and
   reverted: at a real snap the QB and receivers move too, and it made the snap 2 frames late.
 
 **Snap: the line must be seen set** (`snap.SET_FRAMES`). A fire with no still line
 frames before it is skipped (a line already moving when the window starts is not a snap).
 
-Film, before this session -> blended full refit (`reanchor-blend` run): grid ok on all 11
-(worst 2.18 -> 0.08 yd on 1531a, 1.25 -> 0.42 on 1326); 1326 3 offense -> 7-8; 11/11 clips
-produce a read with the set-line rule. Clip 1 still matches the analyst (Cover 4).
+The subtraction run (`snap-common`) found a snap on 1531a (4.33 s) that the final code
+does not; it came from the reverted change, so 1531a still needs its snap given or a
+better detector.
 
 **The page.**
 - The read is drawn on the playing video: `vision/overlay.py` writes `overlay.json`
