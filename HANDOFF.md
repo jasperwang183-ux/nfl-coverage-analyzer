@@ -57,19 +57,23 @@ in k, so 1531b's tick hashes failed at some placements. k is now centered. After
 clip gives one identical fit at every placement from -100 to +100 yd.
 
 **Verify.** Before the fixes, auto naming read 8/11: the Dolphins wide shot regressed, and
-1531a (no snap) and 1531b (5 offense) fail as they did before. Reruns with the fixes
-with the fixes: `origin-fix` (manual) and `origin-fix-auto` (auto) differ ONLY in the
-arbitrary LOS on all 11 clips; 9/11 read, the Dolphins wide shot is back, and 1531a/1531b
+1531a (no snap) and 1531b (5 offense) fail as they did before. With the fixes,
+`origin-fix` (manual) and `origin-fix-auto` (auto) differ ONLY in the arbitrary LOS, and
+every LOS shift is a whole multiple of 10 yd (a wrong parity would shift by 5), so auto
+naming agrees with the analyst on all 10 clips that reach a LOS; 9/11 read, the Dolphins wide shot is back, and 1531a/1531b
 fail as before. Against `reanchor-x`, two reads changed and neither has a known truth:
 1326 (corrected naming): offense left, 10 offense, snap 6.26 s, 2-high closed shown,
 1-high closed played. 1533 (tick fit): 10/11 bodies (was 11/9), snap 29.25 s, played
 1-high closed -> 2-high open. Check both against the film.
 
-**Page plan (built on branch `worktree-agent-a4f8a028205439008`, second push).**
+**The page (merged to main 2026-09-27 from `page-auto-ingest`).**
 1. Automatic ingest. Upload an mp4 and the page picks the frame, names the lines and
    calibrates on its own. It falls back to the manual naming only when that fails
-   (up to 6 still frames tried, nearest the suggested one first).
-2. Pre-snap card. Call, confidence, reasons.
+   (up to 3 still frames tried, nearest the suggested one first). The cap was 6; a probe
+   over all candidates showed every manifest clip names on the first frame at ~5 s a try,
+   and neighbouring still frames fail together, so 3 asks the person after ~15 s.
+2. Pre-snap card. Call, confidence, then why the confidence is not high
+   (`StructuralRead.confidence_why`: serious caveats plus any margin under 2 yd), reasons.
 3. Post-snap card. The frame +2 to +5 s after the snap with the most defenders deep (the
    user agreed to 2-5 s: coverage is read before the throw). Call, confidence, reasons, the
    model's top 3 variants, the rotator's move.
@@ -83,8 +87,13 @@ fail as before. Against `reanchor-x`, two reads changed and neither has a known 
 Stage table in `app.py` (`STAGES`, `ClipStore.advance` rejects illegal moves): uploaded ->
 calibrating -> tracking -> reading -> done | needs_input{calibration|snap|offense} | error.
 Clip 1 through the real server: done in ~1 min, 2-high open shown, Cover 4 played at +2.2 s,
-Cover 4 50%. Both structural reads are "low" confidence there (off-frame caveats): decide
-whether that should lead the card.
+Cover 4 50%. Both structural reads are "low" there. Decided: the card leads with the call
+and the why follows the meter. Clip 1's pre-snap read is low from a 16% crop and the deep
+zone cut at 14 yd; the post-snap read from a defender 0.4 yd off the deep line.
+
+Open: a 2% crop or a 3-yd sideline strip counts as a serious caveat, the same as a 16%
+crop. Harmless on clip 1 (the margin forces low anyway) but it can cost a clean read a
+level. A minimum crop before a caveat counts needs a verify run before it lands.
 
 
 ## Verify harness, GPU, re-anchoring, the overlay (2026-09-26)
