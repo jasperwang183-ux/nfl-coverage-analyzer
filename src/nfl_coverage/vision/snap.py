@@ -52,6 +52,7 @@ STILL_SHARE = 0.5  # the line counts as still below this share of the fire thres
 LINE_DEPTH = 2.5  # LOS band half-depth (same rule as still.line_player_mask)
 LINE_HALFWIDTH = 4.5  # LOS band half-width about the line's y center
 MIN_PRESENCE = 0.6  # a body must be tracked in this share of the window
+SET_FRAMES = 2  # still line frames seen before a fire: the offense must be set before the snap
 SIDELINE_Y_MARGIN = -0.5
 
 
@@ -297,6 +298,9 @@ def detect_snap(
             continue
         if not np.nanmax(np.r_[moving[k : k + sustain], 0.0]) >= fire_frac:
             continue
+        before = disp_s[:k]
+        if int((before < STILL_SHARE * fire_disp).sum()) < SET_FRAMES:
+            continue  # never seen set: a shift or the camera settling, not the snap
         fire_k = k
         break
     if fire_k is None:

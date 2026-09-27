@@ -3,10 +3,10 @@ import pandas as pd
 import pytest
 
 from nfl_coverage.analysis.holdout import formation_side, perturb_snap
+from nfl_coverage.vision.fieldlines import grid_residual
 from nfl_coverage.vision.verify import (
     _rollup,
     compare_expect,
-    grid_residual,
     naming_yards,
     side_status,
 )

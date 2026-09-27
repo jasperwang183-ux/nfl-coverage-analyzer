@@ -12,8 +12,10 @@ from nfl_coverage.vision.fieldlines import (
     YardLine,
     field_x_for_lines,
     find_marks,
+    grid_drift,
     index_lines,
     paint_mask,
+    refit_from_paint,
     search_calibration,
 )
 from nfl_coverage.vision.homography import FieldCalibration
@@ -189,3 +191,57 @@ def test_a_fit_on_the_hash_rows_alone_is_kept_with_a_depth_warning():
     got = r.best.calibration.to_field(mid)[0]
     want = truth.to_field(mid + np.float32([[0, 250]]))[0]
     assert abs(got[0] - want[0]) < 0.5
+
+
+def _slid(calib: FieldCalibration, dx: float) -> FieldCalibration:
+    """The same camera with every field x off by `dx` yd: a drifted chain."""
+    return FieldCalibration.from_points(calib.pixel_points, calib.field_points + np.float32([dx, 0]))
+
+
+def test_grid_drift_measures_a_slide_off_the_painted_lines():
+    frame, truth = _camera(_topdown())
+    marks = find_marks(frame)
+    assert grid_drift(frame, truth, marks) < 0.2
+    assert grid_drift(frame, _slid(truth, 1.5), marks) == pytest.approx(1.5, abs=0.3)
+
+
+def test_refit_from_paint_recovers_the_camera_from_a_drifted_chain():
+    size = (1600, 900)
+    frame, truth = _camera(_topdown(), size=size)
+    r = refit_from_paint(frame, _slid(truth, 1.8))
+    err = _grid_error(r.best.calibration, truth, size)
+    assert np.median(err) < 0.3
+    assert grid_drift(frame, r.best.calibration) < 0.2
+
+
+def test_refit_from_paint_needs_two_yard_lines():
+    frame, truth = _camera(_topdown())
+    blank = np.full_like(frame, FIELD_GREEN)
+    with pytest.raises(ValueError):
+        refit_from_paint(blank, truth)
+
+
+def test_a_partial_correction_moves_the_field_part_of_the_way():
+    from nfl_coverage.vision.pipeline import corrected
+
+    frame, truth = _camera(_topdown())
+    shift = np.array([[1, 0, 2.0], [0, 1, 0], [0, 0, 1]])  # +2 yd along the field
+    half = corrected(truth, 0.5 * np.eye(3) + 0.5 * shift)
+    p = np.float32([[800, 450]])
+    assert half.to_field(p)[0, 0] - truth.to_field(p)[0, 0] == pytest.approx(1.0, abs=1e-3)
+    assert np.allclose(half.to_field(half.pixel_points), half.field_points, atol=1e-3)
+
+
+def test_a_reanchor_corrects_along_the_field_and_keeps_the_depth():
+    from nfl_coverage.vision.pipeline import along_field_correction, corrected
+
+    frame, truth = _camera(_topdown())
+    drifted = _slid(truth, 1.5)
+    refit = FieldCalibration.from_points(
+        truth.pixel_points, truth.field_points + np.float32([0, 1.0])
+    )  # right along the field, a yard off in depth
+    c = along_field_correction(drifted, refit, frame.shape[:2])
+    fixed = corrected(drifted, c)
+    p = np.float32([[800, 450], [300, 700]])
+    assert np.allclose(fixed.to_field(p)[:, 0], truth.to_field(p)[:, 0], atol=0.05)
+    assert np.allclose(fixed.to_field(p)[:, 1], drifted.to_field(p)[:, 1], atol=1e-3)

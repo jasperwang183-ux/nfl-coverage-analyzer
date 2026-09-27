@@ -1,4 +1,68 @@
-# Session Handoff — updated 2026-09-25
+# Session Handoff — updated 2026-09-26
+
+## Verify harness, GPU, re-anchoring, the overlay (2026-09-26)
+
+**Verify harness committed** (`scripts/verify.py`, `vision/verify.py`, `analysis/holdout.py`,
+`.claude/skills/verify`). `verify.py film` runs the 11 manifest clips stage by stage;
+`verify.py bdb` scores the frozen holdout; `compare A B` diffs runs. Use it before any
+vision/analysis change (the skill says how). `data/verify/` and `.claude/worktrees/` are
+gitignored now.
+
+**CUDA torch.** The venv had `torch 2.14.0+cpu`. Installed `2.14.0+cu130` +
+`torchvision 0.29.0+cu130` (the cu128 index stops at 2.11; the RTX 5070 needs CUDA 12.8+).
+YOLO at imgsz 1920: 0.22 s -> 0.017 s per frame, same boxes. Tracking a clip is ~30 s now.
+
+**Calibration re-anchoring** (`pipeline.reanchored_chain`, `fieldlines.grid_drift`,
+`fieldlines.refit_from_paint`). Frame-to-frame chaining drifted up to 2.2 yd over a clip
+(1531a), putting real players off the field. About once a second the chain is checked
+against the frame's own yard lines; past 0.4 yd it is refit on that frame's paint. What
+the session learned the hard way:
+- A correction applied in one frame moves every body at once and the snap detector
+  reads it as the line firing (Dolphins wide 15.6 -> 14.9 s, 1326 -> 4.96 s). The
+  correction is now spread linearly over the frames since the previous anchor.
+- A full refit on a hash-only frame also moves depth (y) by up to a yard with nothing to
+  check it; blended, that still made every body drift and fired a false snap at 14.2 s.
+  The correction is now along the field only (`along_field_correction`: x -> ax+by+c, y
+  kept) because that is all the yard lines measure. This last variant was still being
+  verified at session end: run `verify.py film --tag reanchor-x` results vs `after-refactor`
+  and check the Dolphins snap is ~15.6 s (it is visibly set through 15.5, moving at 15.7).
+- Subtracting the off-line bodies' median motion in the snap detector was tried and
+  reverted: at a real snap the QB and receivers move too, and it made the snap 2 frames late.
+
+**Snap: the line must be seen set** (`snap.SET_FRAMES`). A fire with no still line
+frames before it is skipped (a line already moving when the window starts is not a snap).
+
+Film, before this session -> blended full refit (`reanchor-blend` run): grid ok on all 11
+(worst 2.18 -> 0.08 yd on 1531a, 1.25 -> 0.42 on 1326); 1326 3 offense -> 7-8; 11/11 clips
+produce a read with the set-line rule. Clip 1 still matches the analyst (Cover 4).
+
+**The page.**
+- The read is drawn on the playing video: `vision/overlay.py` writes `overlay.json`
+  (per-frame boxes as [x1,y1,x2,y2,kind], kind O/D/S(deep)/L/X, and the LOS polyline);
+  a canvas over the `<video>` draws the nearest tracked frame and a SHOWN/SNAP/PLAYED label.
+  Checked on clip 1 by rendering overlay.json on the snap/played frames: 2 deep at the
+  snap, 4 deep at +2.2 s. **Not yet watched playing in a visible browser tab** (the
+  automation tab was hidden, so Chrome never loaded the media).
+- Timeline under the video: window, snap, played read; click to seek. "here" buttons set
+  the window ends from the video time.
+- A read that stops asks for what it needs (`ReadError.needs`: snap / offense; a carry that
+  fails: calibration) and re-reads from the tracking cache.
+- Tests: `tests/test_overlay.py`, needs-snap in `test_web.py`, and `tests/test_page_e2e.py`
+  (slow: YOLO on samples/sf-lar/clip1.mp4 through the API, checks the analyst's facts;
+  `pytest -m "not slow"` skips it).
+
+**Sequence model (roadmap 4), in progress on branch `worktree-agent-a30822969fc9406b3`**
+(commits 296e8f2 model, 4c8f358 training script; worktree `.claude/worktrees/agent-...`).
+`models/sequence_try1.pt` trained 224 s on the GPU. Validation (non-holdout weeks):
+full-play variant top-1 0.86 / top-2 0.97, man/zone 0.92; pre-snap-only top-1 0.59.
+The existing snap-feature model is 0.52 top-1 on the holdout, so this looks like a big win
+but it has NOT been scored on the holdout yet. Next: review the branch, score once on the
+holdout, merge, wire `predict()` into `read_tracked` (pre-snap vs full-play = disguise).
+
+**Open.** 1531b reads 5 offense (the Rams' line merges into a few boxes: detection, not
+tracking); 6 manifest clips have yard-line namings Claude read off the numbers, awaiting
+the user's confirmation (`scratchpad/naming_check.html` was shown); Dolphins wide grid
+drift is perspective, not a slide, so the x-only correction leaves it at 0.82 yd.
 
 ## Calibration and formation hardened on new clips (2026-09-25, later)
 

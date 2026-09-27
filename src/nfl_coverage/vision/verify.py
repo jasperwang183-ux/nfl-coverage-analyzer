@@ -105,14 +105,6 @@ def _stage(stages: list[Stage], name: str):
 # ------------------------------------------------------------------ pure checks
 
 
-def grid_residual(xs: np.ndarray) -> float:
-    """Median distance (yd) of projected yard-line x's from the nearest whole 5 yd."""
-    xs = np.asarray(xs, float)
-    if not len(xs):
-        return float("nan")
-    return float(np.median(np.abs(xs - 5.0 * np.round(xs / 5.0))))
-
-
 def side_status(n_offense: int, n_defense: int) -> str:
     """ok / warn / fail for the snap's side counts; the defense decides a fail."""
     if not DEFENSE_WARN[0] <= n_defense <= DEFENSE_WARN[1] or n_offense < OFFENSE_FAIL:
@@ -211,6 +203,7 @@ def verify_clip(
     from nfl_coverage.vision.fieldlines import (
         find_marks,
         five_yard_shift_warning,
+        grid_drift,
         n_number_edges,
         search_calibration,
     )
@@ -313,17 +306,15 @@ def verify_clip(
                 st.warn(f"median {np.median(per_frame):.0f} tracked bodies per frame")
 
         with _stage(stages, "grid") as st:
-            residuals, found = [], []
+            residuals, found, at = [], [], []
             every = max(1, round(GRID_SAMPLE_EVERY / clip.step))
             for i in range(0, len(clip.frames), every):
                 fr, cal = clip.frames[i], clip.calibrations[i]
                 m = find_marks(fr.image)
-                ys = [m.ref_y - 0.1 * fr.image.shape[0], m.ref_y, m.ref_y + 0.1 * fr.image.shape[0]]
-                pts = np.float32([[ln.x_at(y), y] for ln in m.lines for y in ys])
-                if len(pts) == 0:
+                if not m.lines:
                     continue
-                xs = cal.to_field(pts)[:, 0]
-                residuals.append(grid_residual(xs))
+                residuals.append(grid_drift(fr.image, cal, m))
+                at.append(fr.t)
                 found.append(len(m.lines))
             if not residuals:
                 raise StageFailed("no yard lines found on any tracked frame")
@@ -332,7 +323,7 @@ def verify_clip(
                 "frames_checked": len(residuals),
                 "median_residual": round(float(np.nanmedian(residuals)), 3),
                 "worst_residual": round(worst, 3),
-                "worst_at_s": round(float(clip.frames[int(np.nanargmax(residuals)) * every].t), 2),
+                "worst_at_s": round(float(at[int(np.nanargmax(residuals))]), 2),
             }
             if worst >= GRID_FAIL:
                 st.status = "fail"

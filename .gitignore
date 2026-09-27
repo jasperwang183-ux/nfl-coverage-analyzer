@@ -48,3 +48,6 @@ Thumbs.db
 
 # sample clips are tracked test fixtures (see samples/README.md)
 !samples/**/*.mp4
+
+# agent worktrees
+.claude/worktrees/
