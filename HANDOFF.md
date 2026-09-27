@@ -28,8 +28,12 @@ clip gives one identical fit at every placement from -100 to +100 yd.
 
 **Verify.** Before the fixes, auto naming read 8/11: the Dolphins wide shot regressed, and
 1531a (no snap) and 1531b (5 offense) fail as they did before. Reruns with the fixes
-(`origin-fix` manual, `origin-fix-auto` auto) were in flight at push time: compare them
-first (`verify.py compare origin-fix origin-fix-auto` should differ only in LOS).
+with the fixes: `origin-fix` (manual) and `origin-fix-auto` (auto) differ ONLY in the
+arbitrary LOS on all 11 clips; 9/11 read, the Dolphins wide shot is back, and 1531a/1531b
+fail as before. Against `reanchor-x`, two reads changed and neither has a known truth:
+1326 (corrected naming): offense left, 10 offense, snap 6.26 s, 2-high closed shown,
+1-high closed played. 1533 (tick fit): 10/11 bodies (was 11/9), snap 29.25 s, played
+1-high closed -> 2-high open. Check both against the film.
 
 **Page plan (built on branch `worktree-agent-a4f8a028205439008`, second push).**
 1. Automatic ingest. Upload an mp4 and the page picks the frame, names the lines and
