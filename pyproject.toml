@@ -17,3 +17,4 @@ src = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["slow: runs YOLO on real sample film (skip with -m \"not slow\")"]

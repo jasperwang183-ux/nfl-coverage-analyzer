@@ -394,13 +394,15 @@ def create_app(data_dir: Path | None = None, model_path: Path | None = None) -> 
         store.update(clip_id, calibration=cal, stage="calibrated")
         return cal
 
-    def write_outputs(clip_id: str, clip, read) -> dict:
+    def write_outputs(clip_id: str, clip, read, run_deep: float) -> dict:
         from nfl_coverage.analysis.viz import render_play
+        from nfl_coverage.vision.overlay import overlay_frames
         from nfl_coverage.vision.pipeline import annotate_snap
 
         d = store.dir(clip_id)
         result = read.to_dict()
         cv2.imwrite(str(d / "snap.jpg"), annotate_snap(clip, read))
+        (d / "overlay.json").write_text(json.dumps(overlay_frames(clip, read, run_deep)))
         render_play(
             read.tracks.assign(dataset="clip", coverage_type="?", man_zone="?"),
             str(d / "topdown.png"),
@@ -414,6 +416,7 @@ def create_app(data_dir: Path | None = None, model_path: Path | None = None) -> 
     def run_analysis(clip_id: str, req: AnalyzeRequest):
         from nfl_coverage.vision.homography import FieldCalibration
         from nfl_coverage.vision.pipeline import (
+            RUN_DEEP_FILM,
             ReadError,
             TrackedClip,
             carry_calibration,
@@ -446,7 +449,9 @@ def create_app(data_dir: Path | None = None, model_path: Path | None = None) -> 
                             d / "clip.mp4", anchor, anchor_t, req.start
                         )
                     except ValueError as e:
-                        store.update(clip_id, stage="needs_input", message=str(e))
+                        store.update(
+                            clip_id, stage="needs_input", message=str(e), needs="calibration"
+                        )
                         return
                     anchor_t = req.start
                     caveats = [n for n in carry_notes if n.startswith("calibrated on the hash")]
@@ -468,10 +473,10 @@ def create_app(data_dir: Path | None = None, model_path: Path | None = None) -> 
             try:
                 read = read_tracked(clip, bundle=bundle())
             except ReadError as e:
-                store.update(clip_id, stage="needs_input", message=str(e))
+                store.update(clip_id, stage="needs_input", message=str(e), needs=e.needs)
                 return
-            write_outputs(clip_id, clip, read)
-            store.update(clip_id, stage="done", message="")
+            write_outputs(clip_id, clip, read, RUN_DEEP_FILM)
+            store.update(clip_id, stage="done", message="", needs=None)
         except Exception as e:  # noqa: BLE001 - a background thread: surface any failure to the page
             traceback.print_exc()
             store.update(clip_id, stage="error", message=f"{type(e).__name__}: {e}")
@@ -523,8 +528,8 @@ def create_app(data_dir: Path | None = None, model_path: Path | None = None) -> 
             )
         except ReadError as e:
             raise HTTPException(422, str(e)) from e
-        result = write_outputs(clip_id, clip, read)
-        store.update(clip_id, stage="done", message="", overrides=req.model_dump())
+        result = write_outputs(clip_id, clip, read, req.run_deep or RUN_DEEP_FILM)
+        store.update(clip_id, stage="done", message="", needs=None, overrides=req.model_dump())
         if req.snap_t is not None:
             log_snap_label(store.meta(clip_id), read)
         return result
