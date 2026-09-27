@@ -5,6 +5,7 @@ import numpy as np
 from nfl_coverage.analysis.report import (
     CoverageReport,
     disguise_text,
+    model_read,
     structural_read,
     variant_confidence,
 )
@@ -89,3 +90,16 @@ def test_variant_confidence_and_disguise_text():
     s = rep.summary()
     assert "SHOWN" in s and "PLAYED +2 s" in s and "DISGUISE" in s
     assert rep.to_dict()["shown"]["shell"] == "2-high MOF-open"
+
+
+def test_model_read_ranks_and_levels_a_head():
+    r = model_read(
+        "sequence_v1",
+        2.96,
+        {"COVER_3_ZONE": 0.1, "COVER_4_ZONE": 0.8, "COVER_1_MAN": 0.1},
+        {"MAN_COVERAGE": 0.2, "ZONE_COVERAGE": 0.8},
+    )
+    assert r.t == 3.0
+    assert [c for c, _ in r.variant] == ["COVER_4_ZONE", "COVER_3_ZONE", "COVER_1_MAN"]
+    assert r.confidence == "high"
+    assert r.man_zone[0][0] == "ZONE_COVERAGE"

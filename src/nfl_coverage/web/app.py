@@ -37,7 +37,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from nfl_coverage.config import DATA_PROCESSED, MODELS_DIR, ROOT
+from nfl_coverage.config import DATA_PROCESSED, MODELS_DIR, ROOT, SEQUENCE_MODEL
 
 STATIC = Path(__file__).parent / "static"
 DEFAULT_DATA = ROOT / "data" / "web"
@@ -360,11 +360,15 @@ class RereadRequest(BaseModel):
 
 
 def create_app(
-    data_dir: Path | None = None, model_path: Path | None = None, auto: bool = True
+    data_dir: Path | None = None,
+    model_path: Path | None = None,
+    auto: bool = True,
+    sequence_path: Path | None = None,
 ) -> FastAPI:
     """`auto`: an upload runs the whole job (naming, tracking, reading) with no person."""
     store = ClipStore(data_dir or DEFAULT_DATA)
     model_path = model_path if model_path is not None else MODELS_DIR / "still_shown.joblib"
+    sequence_path = sequence_path if sequence_path is not None else SEQUENCE_MODEL
     app = FastAPI(title="NFL Coverage Analyzer")
     track_lock = threading.Lock()  # one YOLO job at a time
     cache: dict = {}
@@ -377,6 +381,13 @@ def create_app(
 
                 cache["bundle"] = load_bundle(model_path)
         return cache["bundle"]
+
+    def sequence_bundle():
+        if "sequence" not in cache:
+            from nfl_coverage.models.sequence import load_if_present
+
+            cache["sequence"] = load_if_present(sequence_path)
+        return cache["sequence"]
 
     @app.exception_handler(Exception)
     async def unexpected(request, exc: Exception):
@@ -600,7 +611,7 @@ def create_app(
             store.advance(clip_id, "reading", progress=1.0)
             clip = TrackedClip.load(d / "tracked")
             try:
-                read = read_tracked(clip, bundle=bundle())
+                read = read_tracked(clip, bundle=bundle(), sequence_bundle=sequence_bundle())
             except ReadError as e:
                 store.advance(clip_id, "needs_input", message=str(e), needs=e.needs)
                 return
@@ -675,6 +686,7 @@ def create_app(
                 req.ball_y,
                 req.run_deep or RUN_DEEP_FILM,
                 bundle(),
+                sequence_bundle(),
             )
         except ReadError as e:
             raise HTTPException(422, str(e)) from e
@@ -694,6 +706,7 @@ def create_app(
         read = res["report"]["shown" if req.phase == "pre" else "played"]
         if read is None:
             raise HTTPException(409, "there is no post-snap read to correct")
+        model = res["report"].get("pre_model" if req.phase == "pre" else "post_model")
         rec = {
             "logged": time.time(),
             "clip": meta["name"],
@@ -704,6 +717,8 @@ def create_app(
             "note": req.note,
             "model_call": read["shell"],
             "model_confidence": read["confidence"],
+            "model_variant": model["variant"][0][0] if model else None,
+            "model_variant_confidence": model["confidence"] if model else None,
             "snap_t": res["snap"]["t"],
             "read_t": res["snap"]["t"] if req.phase == "pre" else res["played_frame"]["t"],
         }

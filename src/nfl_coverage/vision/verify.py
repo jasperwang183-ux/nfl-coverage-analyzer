@@ -198,6 +198,7 @@ def verify_clip(
     imgsz: int = 1920,
     log: Callable[[str], None] = print,
     auto_naming: bool = False,
+    sequence_bundle=None,
 ) -> dict:
     """Run one manifest entry through every stage; never raises.
 
@@ -270,7 +271,9 @@ def verify_clip(
                 st.metrics["edge_margin"] = named.edge_margin
                 st.metrics["shift_x"] = shift_x
                 if shift_x % 10:
-                    st.warn(f"auto naming put the 10s on other lines than the manifest ({shift_x:+.0f} yd)")
+                    st.warn(
+                        f"auto naming put the 10s on other lines than the manifest ({shift_x:+.0f} yd)"
+                    )
             else:
                 search = search_calibration(img, yards, marks=marks)
             best = search.best
@@ -285,7 +288,9 @@ def verify_clip(
             }
             if search.warning:
                 st.warn("hash rows only: depth toward the sidelines is extrapolated")
-            shift = None if auto_naming else five_yard_shift_warning(img, yards, search, marks=marks)
+            shift = (
+                None if auto_naming else five_yard_shift_warning(img, yards, search, marks=marks)
+            )
             if shift:
                 st.warn("numbers prefer a 5-yd shift: " + shift)
             anchor, anchor_t = best.calibration, cal_t
@@ -361,6 +366,7 @@ def verify_clip(
                     offense=given.get("offense"),
                     ball_y=given.get("ball_y"),
                     bundle=bundle,
+                    sequence_bundle=sequence_bundle,
                 )
             except ReadError as e:
                 raise StageFailed(f"needs input: {e}") from e
@@ -382,6 +388,8 @@ def verify_clip(
                 "played_confidence": (rep.get("played") or {}).get("confidence"),
                 "disguise": rep.get("disguise_label"),
                 "variant_top": (rep.get("variant") or [[None]])[0][0],
+                "seq_pre_top": ((rep.get("pre_model") or {}).get("variant") or [[None]])[0][0],
+                "seq_post_top": ((rep.get("post_model") or {}).get("variant") or [[None]])[0][0],
             }
             s = side_status(sides["offense"], sides["defense"])
             if s != "ok":

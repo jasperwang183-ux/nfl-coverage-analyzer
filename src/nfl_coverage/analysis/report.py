@@ -182,15 +182,39 @@ def structural_read(
 
 
 @dataclass
+class ModelRead:
+    """One sequence-model head's call on a clip: what it read up to, ranked, with a level."""
+
+    source: str
+    t: float  # seconds after the snap of the last frame the head read
+    variant: list[tuple[str, float]]  # descending
+    confidence: str
+    man_zone: list[tuple[str, float]]  # descending
+
+
+def model_read(source: str, t: float, variant: dict, man_zone: dict) -> ModelRead:
+    ranked = sorted(variant.items(), key=lambda kv: -kv[1])
+    return ModelRead(
+        source=source,
+        t=round(t, 1),
+        variant=ranked,
+        confidence=variant_confidence(ranked),
+        man_zone=sorted(man_zone.items(), key=lambda kv: -kv[1]),
+    )
+
+
+@dataclass
 class CoverageReport:
     shown: StructuralRead
     played: StructuralRead | None
-    variant: list[tuple[str, float]]  # model probabilities on the snap frame, descending
+    variant: list[tuple[str, float]]  # snap-frame model probabilities, descending
     variant_confidence: str
     disguise_label: str
     disguise_score: float
     disguise_text: str
     caveats: list[str]
+    pre_model: ModelRead | None = None  # sequence model, frames up to the snap
+    post_model: ModelRead | None = None  # sequence model, the whole play
 
     def to_dict(self) -> dict:
         return asdict(self)

@@ -191,3 +191,10 @@ def test_missing_labels_are_skipped():
     y = encode_labels(pd.Series(["COVER_3_ZONE", None, "PREVENT"]), CLASSES)
     assert y.tolist() == [1, -1, -1]
     assert PRE_FRAMES == SNAP_T
+
+
+def test_film_reads_skip_the_model_off_the_10_hz_grid():
+    from nfl_coverage.vision.pipeline import sequence_reads
+
+    assert sequence_reads(None, None, None, 0, "left", 0.1) == (None, None)
+    assert sequence_reads(object(), None, None, 0, "left", 0.2) == (None, None)
