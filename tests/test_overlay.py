@@ -1,0 +1,44 @@
+"""The per-frame overlay the page draws on the video, on synthetic reads."""
+
+from types import SimpleNamespace
+
+import numpy as np
+import pandas as pd
+
+from nfl_coverage.vision.homography import FieldCalibration
+from nfl_coverage.vision.overlay import deep_ids, los_pixels
+
+
+def _read(offense="left", los=40.0):
+    # canonical: offense moving right, so depth = x - canonical LOS
+    rows = [
+        (1, 0, 52.0, "Defense"),  # 12 yd deep at the snap
+        (2, 0, 46.0, "Defense"),  # 6 yd: not deep
+        (3, 0, 30.0, "Offense"),
+        (1, 20, 50.0, "Defense"),  # 10 yd after the snap: under the played depth
+        (2, 20, 55.0, "Defense"),  # 15 yd after the snap
+    ]
+    tracks = pd.DataFrame(rows, columns=["nfl_id", "rel_frame", "x", "side"])
+    return SimpleNamespace(offense=offense, los=los, tracks=tracks)
+
+
+def test_deep_uses_the_shown_depth_up_to_the_snap_and_the_played_depth_after():
+    r = _read()
+    assert deep_ids(r, 0, run_deep=12.0) == {1}
+    assert deep_ids(r, 20, run_deep=12.0) == {2}
+
+
+def test_deep_measures_from_the_canonical_los_when_the_offense_is_on_the_right():
+    r = _read(offense="right", los=80.0)  # canonical LOS = 120 - 80 = 40
+    assert deep_ids(r, 0, run_deep=12.0) == {1}
+
+
+def test_los_pixels_run_along_the_field_line_under_a_known_camera():
+    # 10 px per yard, far sideline at the top
+    px = np.float32([[0, 0], [1200, 0], [1200, 533], [0, 533]])
+    field = np.float32([[0, 53.3], [120, 53.3], [120, 0], [0, 0]])
+    calib = FieldCalibration.from_points(px, field)
+    pts = np.array(los_pixels(calib, 40.0, 1200, 533))
+    assert len(pts) >= 10
+    assert np.allclose(pts[:, 0], 400, atol=1)
+    assert pts[:, 1].min() <= 1 and pts[:, 1].max() >= 532

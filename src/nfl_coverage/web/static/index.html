@@ -84,6 +84,13 @@
   details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
   .hidden { display: none !important; }
   .muted { color: var(--muted); }
+  .stage { position: relative; }
+  .stage canvas { position: absolute; left: 0; top: 0; pointer-events: none; }
+  .timeline { position: relative; height: 18px; margin: 8px 0 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+  .timeline .win { position: absolute; top: 0; bottom: 0; background: var(--accent); opacity: .22; }
+  .timeline .mark { position: absolute; top: -3px; bottom: -3px; width: 3px; border-radius: 2px; }
+  .timeline .mark.snap { background: #e0a800; } .timeline .mark.played { background: var(--def); }
+  .timeline .mark.now { background: var(--ink); width: 2px; }
   .legend span { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: 0; }
   @media (max-width: 640px) { header { padding: 12px 16px; } section.card { padding: 14px; } .thumb { flex-basis: 120px; } }
 </style>
@@ -106,8 +113,13 @@
 
   <div id="clipView" class="hidden">
     <section class="card">
-      <video id="video" controls preload="metadata"></video>
-      <div class="row"><button class="ghost hidden" id="toSnap">Jump to the snap</button><button class="ghost hidden" id="toPlayed">Jump to the played read</button></div>
+      <div class="stage"><video id="video" controls preload="metadata"></video><canvas id="overlay"></canvas></div>
+      <div class="timeline" id="timeline" title="Click to seek. Shaded: the play window; yellow: the snap; red: the played read."></div>
+      <div class="row">
+        <button class="ghost hidden" id="toSnap">Jump to the snap</button><button class="ghost hidden" id="toPlayed">Jump to the played read</button>
+        <label class="hidden" id="overlayToggle"><input type="checkbox" id="showOverlay" checked> draw the read on the video</label>
+        <span class="legend muted hidden" id="overlayLegend" style="font-size:13px"><span style="background:var(--off)"></span>offense<span style="background:var(--def)"></span>defense<span style="background:#ffd400"></span>deep defenders<span style="background:#aaa"></span>line</span>
+      </div>
     </section>
 
     <section class="card hidden" id="resultCard"></section>
@@ -146,9 +158,10 @@
 
     <section class="card hidden" id="analyzeCard">
       <h2><span class="step">3</span>Analyze the play</h2>
-      <p class="hint">Start the window at least half a second before the snap (the snap is found from the offensive line firing) and run it through the coverage declaring, about 2.5 s after the snap. It does not have to include the frame you calibrated: the calibration is carried along the clip to the window's first frame and refit there.</p>
+      <p class="hint">Scrub the video above and press <b>here</b> to set each end, or type the times. Start the window at least half a second before the snap (the snap is found from the offensive line firing) and run it through the coverage declaring, about 2.5 s after the snap. It does not have to include the frame you calibrated: the calibration is carried along the clip to the window's first frame and refit there.</p>
       <div class="row">
-        <label>From</label><input type="number" id="winStart" step="0.1" min="0"><label>s to</label><input type="number" id="winEnd" step="0.1" min="0"><label>s</label>
+        <label>From</label><input type="number" id="winStart" step="0.1" min="0"><button class="ghost" id="startHere" title="Use the video's current time">here</button>
+        <label>to</label><input type="number" id="winEnd" step="0.1" min="0"><button class="ghost" id="endHere" title="Use the video's current time">here</button><label>s</label>
         <label>Detection size</label><select id="imgsz"><option value="1920">1920 (film)</option><option value="1280">1280 (faster)</option></select>
         <button id="analyzeBtn">Analyze</button>
       </div>
@@ -345,13 +358,103 @@ function render() {
   $("progressWrap").classList.toggle("hidden", !busy);
   $("progBar").style.width = `${Math.round(100 * (clip.progress || 0))}%`;
   $("progMsg").textContent = clip.stage === "tracking"
-    ? `Tracking players: ${Math.round(100 * (clip.progress || 0))}% (a few minutes on a CPU)`
+    ? `Tracking players: ${Math.round(100 * (clip.progress || 0))}%`
     : clip.stage === "reading" ? "Reading the snap, the formation and the coverage..."
     : clip.stage === "calibrating" ? "Carrying the calibration from the calibrated frame to the window..." : "Queued...";
   $("stageMsg").innerHTML = clip.stage === "error" ? `<div class="note err">Analysis failed: ${esc(clip.message)}</div>`
-    : clip.stage === "needs_input" ? `<div class="note">${esc(clip.message)}</div>` : "";
+    : clip.stage === "needs_input" ? needsInput(clip) : "";
+  wireNeeds();
   renderResult(clip.result);
+  drawTimeline();
 }
+
+function needsInput(c) {
+  const msg = `<div>${esc(c.message)}</div>`;
+  if (c.needs === "snap") return `<div class="note">${msg}
+    <div class="row"><label>Snap at</label><input type="number" id="needSnap" step="0.1"><button class="ghost" id="needSnapHere">here</button><label>s</label><button id="needGo">Read with this snap</button><span class="muted" id="needMsg"></span></div>
+    <div class="hint">Pause the video on the frame the ball is snapped and press <b>here</b>. The tracking is kept, so this takes seconds.</div></div>`;
+  if (c.needs === "offense") return `<div class="note">${msg}
+    <div class="row"><label>The offense is on the</label><select id="needOffense"><option value="left">left</option><option value="right">right</option></select><button id="needGo">Read with this side</button><span class="muted" id="needMsg"></span></div></div>`;
+  if (c.needs === "calibration") return `<div class="note">${msg}<div class="hint">Pick a pre-snap frame inside the play window in step 1 and fit it, then analyze again.</div></div>`;
+  return `<div class="note">${msg}</div>`;
+}
+function wireNeeds() {
+  if (!$("needGo")) return;
+  if ($("needSnapHere")) $("needSnapHere").onclick = () => { $("needSnap").value = $("video").currentTime.toFixed(2); };
+  $("needGo").onclick = async () => {
+    const body = { snap_t: null, los: null, ball_y: null, offense: null };
+    if ($("needSnap")) {
+      if ($("needSnap").value === "") { $("needMsg").textContent = "give the snap time"; return; }
+      body.snap_t = Number($("needSnap").value);
+    }
+    if ($("needOffense")) body.offense = $("needOffense").value;
+    $("needGo").disabled = true; $("needMsg").textContent = "Reading...";
+    try { await post(`/api/clips/${clip.id}/reread`, body); clip = await api(`/api/clips/${clip.id}`); render(); }
+    catch (e) { $("needMsg").innerHTML = `<span style="color:var(--low)">${esc(e.message)}</span>`; $("needGo").disabled = false; }
+  };
+}
+
+// ---------------------------------------------------------------- timeline + overlay
+let overlay = null, overlayFor = null;
+function drawTimeline() {
+  const v = $("video"), dur = clip.duration || v.duration || 1, pct = (t) => `${(100 * t / dur).toFixed(2)}%`;
+  const w = clip.window || {}, res = clip.result;
+  let html = "";
+  if (w.start != null) html += `<div class="win" style="left:${pct(w.start)};width:${pct(w.end - w.start)}"></div>`;
+  if (res) html += `<div class="mark snap" style="left:${pct(res.snap.t)}"></div><div class="mark played" style="left:${pct(res.played_frame.t)}"></div>`;
+  html += `<div class="mark now" id="nowMark" style="left:${pct(v.currentTime || 0)}"></div>`;
+  $("timeline").innerHTML = html;
+}
+$("timeline").onclick = (e) => {
+  const r = $("timeline").getBoundingClientRect();
+  $("video").currentTime = Math.max(0, (e.clientX - r.left) / r.width * (clip.duration || $("video").duration));
+};
+$("startHere").onclick = () => { $("winStart").value = $("video").currentTime.toFixed(2); };
+$("endHere").onclick = () => { $("winEnd").value = $("video").currentTime.toFixed(2); };
+
+async function loadOverlay() {
+  const res = clip.result;
+  const key = res ? `${clip.id}:${res.snap.t}:${res.played_frame.t}:${res.formation.used.los}:${res.formation.used.offense}` : null;
+  if (key === overlayFor) return;
+  overlayFor = key; overlay = null;
+  if (key) overlay = await api(file("overlay.json")).catch(() => null);
+  $("overlayToggle").classList.toggle("hidden", !overlay); $("overlayLegend").classList.toggle("hidden", !overlay);
+  paint();
+}
+const KIND = { O: ["#1f6feb", 2], D: ["#d93a2b", 2], S: ["#ffd400", 4], L: ["#aaaaaa", 1], X: ["rgba(255,255,255,.35)", 1] };
+function paint() {
+  const v = $("video"), cv = $("overlay");
+  const w = v.clientWidth, h = v.clientHeight;
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const g = cv.getContext("2d"); g.clearRect(0, 0, w, h);
+  const now = $("nowMark");
+  if (now && clip) now.style.left = `${(100 * v.currentTime / (clip.duration || v.duration || 1)).toFixed(2)}%`;
+  if (!overlay || !$("showOverlay").checked || !overlay.frames.length) return;
+  const t = v.currentTime, fr = overlay.frames;
+  if (t < fr[0].t - 0.1 || t > fr[fr.length - 1].t + 0.1) return;
+  let best = fr[0];
+  for (const f of fr) if (Math.abs(f.t - t) < Math.abs(best.t - t)) best = f;
+  const k = w / overlay.width;  // the video keeps its aspect (height auto): one scale maps pixels
+  if (best.los.length > 1) {
+    g.strokeStyle = "#ffe600"; g.lineWidth = 2; g.setLineDash([8, 6]); g.beginPath();
+    best.los.forEach(([x, y], i) => (i ? g.lineTo(x * k, y * k) : g.moveTo(x * k, y * k)));
+    g.stroke(); g.setLineDash([]);
+  }
+  for (const [x1, y1, x2, y2, kind] of best.boxes) {
+    const [c, lw] = KIND[kind] || KIND.X;
+    g.strokeStyle = c; g.lineWidth = lw; g.strokeRect(x1 * k, y1 * k, (x2 - x1) * k, (y2 - y1) * k);
+  }
+  const label = t < overlay.snap_t - 0.05 ? `SHOWN  ${overlay.shown}`
+    : t < overlay.played_t - 0.05 ? `SNAP  shown ${overlay.shown}` : `PLAYED  ${overlay.played ?? "?"}`;
+  g.font = "600 15px system-ui, sans-serif";
+  const tw = g.measureText(label).width;
+  g.fillStyle = "rgba(0,0,0,.65)"; g.fillRect(8, 8, tw + 16, 26);
+  g.fillStyle = "#fff"; g.fillText(label, 16, 26);
+}
+function loop() { paint(); if (!$("video").paused) requestAnimationFrame(loop); }
+["play", "seeked", "timeupdate", "loadedmetadata"].forEach((ev) => $("video").addEventListener(ev, () => (ev === "play" ? loop() : paint())));
+window.addEventListener("resize", paint);
+$("showOverlay").addEventListener("change", paint);
 
 function readCard(title, r) {
   if (!r) return `<div class="sub"><h3>${title}</h3><div class="muted">not read</div></div>`;
@@ -364,6 +467,7 @@ function readCard(title, r) {
 function renderResult(res) {
   const card = $("resultCard");
   $("toSnap").classList.toggle("hidden", !res); $("toPlayed").classList.toggle("hidden", !res);
+  loadOverlay();
   if (!res) { card.classList.add("hidden"); return; }
   card.classList.remove("hidden");
   const rep = res.report, f = res.formation, inf = f.inferred, used = f.used, src = f.source;

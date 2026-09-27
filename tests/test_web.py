@@ -1,5 +1,8 @@
 """The page's API and the pieces under it, on synthetic video (no YOLO, no real film)."""
 
+import json
+import time
+
 import cv2
 import numpy as np
 import pytest
@@ -165,3 +168,41 @@ def test_a_non_video_upload_is_rejected(client, tmp_path):
     with bad.open("rb") as fh:
         r = client.post("/api/clips", files={"file": ("notes.mp4", fh, "video/mp4")})
     assert r.status_code == 400
+
+
+def _still_clip(n=30):
+    """A tracked window where nobody moves: there is no snap to find."""
+    px = np.float32([[10, 10], [300, 10], [300, 170], [10, 170]])
+    fp = np.float32([[40, 50], [60, 50], [60, 5], [40, 5]])
+    cal = FieldCalibration.from_points(px, fp)
+    boxes = np.array([[40.0 + 20 * k, 60.0, 52.0 + 20 * k, 100.0] for k in range(12)])
+    frames = [
+        TrackedFrame(
+            i, 0.1 * i, np.full((180, 320, 3), 90, np.uint8), boxes, np.arange(12), np.ones(12)
+        )
+        for i in range(n)
+    ]
+    return TrackedClip(frames, [cal] * n, 0.1)
+
+
+def test_a_clip_without_a_snap_asks_for_one(client, tmp_path, monkeypatch):
+    video = _video(tmp_path / "play.mp4")
+    with video.open("rb") as fh:
+        cid = client.post("/api/clips", files={"file": ("play.mp4", fh, "video/mp4")}).json()["id"]
+    d = tmp_path / "web" / cid
+    clip = _still_clip()
+    clip.calibrations[0].save(d / "calibration.json")
+    meta = json.loads((d / "meta.json").read_text())
+    meta["calibration"] = {"t": 0.5}
+    (d / "meta.json").write_text(json.dumps(meta))
+    monkeypatch.setattr("nfl_coverage.vision.pipeline.track_frames", lambda *a, **k: clip)
+    r = client.post(f"/api/clips/{cid}/analyze", json={"start": 0.0, "end": 2.9})
+    assert r.status_code == 200, r.text
+    for _ in range(100):
+        meta = client.get(f"/api/clips/{cid}").json()
+        if meta["stage"] not in ("queued", "calibrating", "tracking", "reading"):
+            break
+        time.sleep(0.05)
+    assert meta["stage"] == "needs_input"
+    assert meta["needs"] == "snap"
+    assert "no snap found" in meta["message"]
