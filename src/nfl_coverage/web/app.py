@@ -28,15 +28,18 @@ import threading
 import time
 import traceback
 import uuid
+from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated, Literal
 
 import cv2
 import numpy as np
+import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from nfl_coverage.analysis import tendencies as td
 from nfl_coverage.config import DATA_PROCESSED, MODELS_DIR, ROOT, SEQUENCE_MODEL
 
 STATIC = Path(__file__).parent / "static"
@@ -369,6 +372,15 @@ class CorrectionRequest(BaseModel):
         return self
 
 
+class DefenseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    season: int
+    defense: str = Field(min_length=2, max_length=3)
+    down: int | None = Field(None, ge=1, le=4)
+    to_go: int | None = Field(None, ge=1, le=99)
+
+
 class AnalyzeRequest(BaseModel):
     start: float
     end: float
@@ -391,11 +403,13 @@ def create_app(
     model_path: Path | None = None,
     auto: bool = True,
     sequence_path: Path | None = None,
+    tendencies_path: Path | None = None,
 ) -> FastAPI:
     """`auto`: an upload runs the whole job (naming, tracking, reading) with no person."""
     store = ClipStore(data_dir or DEFAULT_DATA)
     model_path = model_path if model_path is not None else MODELS_DIR / "still_shown.joblib"
     sequence_path = sequence_path if sequence_path is not None else SEQUENCE_MODEL
+    tendencies_path = tendencies_path if tendencies_path is not None else td.TABLES_PATH
     app = FastAPI(title="NFL Coverage Analyzer")
     track_lock = threading.Lock()  # one YOLO job at a time
     cache: dict = {}
@@ -415,6 +429,31 @@ def create_app(
 
             cache["sequence"] = load_if_present(sequence_path)
         return cache["sequence"]
+
+    def tendency_tables() -> pd.DataFrame | None:
+        if "tendencies" not in cache:
+            p = tendencies_path
+            cache["tendencies"] = pd.read_parquet(p) if p.exists() else None
+        return cache["tendencies"]
+
+    def tendency(meta: dict) -> dict | None:
+        """How often this defense plays the look the pre-snap card read, and the league."""
+        ctx, result, tables = meta.get("defense"), meta.get("result"), tendency_tables()
+        if not ctx or not result or tables is None:
+            return None
+        shown = result["report"]["shown"]
+        look = td.shown_state(shown["n_deep"], shown["mof_closed"])
+        sit = td.ANY
+        if ctx.get("down") and ctx.get("to_go"):
+            sit = td.situation(pd.Series([ctx["down"]]), pd.Series([ctx["to_go"]])).iloc[0]
+        team = td.lookup(tables, ctx["season"], ctx["defense"], look, sit)
+        league = td.lookup(tables, ctx["season"], td.LEAGUE, look, sit)
+        return {
+            "look": look,
+            "situation": sit,
+            "team": asdict(team) if team else None,
+            "league": asdict(league) if league else None,
+        }
 
     @app.exception_handler(Exception)
     async def unexpected(request, exc: Exception):
@@ -492,7 +531,25 @@ def create_app(
         result = store.dir(clip_id) / "result.json"
         if result.exists():
             meta["result"] = json.loads(result.read_text())
+        meta["tendency"] = tendency(meta)
         return meta
+
+    @app.get("/api/defenses")
+    def defenses():
+        """The seasons and defenses the tendency tables cover."""
+        tables = tendency_tables()
+        if tables is None:
+            return {}
+        teams = tables[tables["defense"] != td.LEAGUE]
+        return {str(s): sorted(g["defense"].unique()) for s, g in teams.groupby("season")}
+
+    @app.post("/api/clips/{clip_id}/defense")
+    def set_defense(clip_id: str, req: DefenseRequest):
+        known = defenses().get(str(req.season), [])
+        if req.defense not in known:
+            raise HTTPException(422, f"no tendency table for {req.defense} in {req.season}")
+        store.update(clip_id, defense=req.model_dump())
+        return get_clip(clip_id)
 
     @app.get("/api/clips/{clip_id}/video")
     def video(clip_id: str):
