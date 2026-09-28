@@ -17,8 +17,9 @@ once, so restart it after a rebuild. The Dolphins-Chargers clip `b2b4d7899dbc` h
 set as a demo; which side defends there is not known.
 
 Play-callers (`src/nfl_coverage/data/defensive_play_callers.csv`, researched by a
-subagent with sources): six 2018 rows (IND KC LA LAC MIA NYG) are the title DC with no
-source read, confidence low (SEA: Norton called, Carroll added calls in-game); six 2023 rows (CAR DEN JAX LV
+subagent with sources): every row cites a page; 10 2018 rows are medium (evidence from
+an adjacent season or the DC title with an offensive head coach; SEA is high, though
+Carroll added calls in-game to Norton's); six 2023 rows (CAR DEN JAX LV
 MIN NYG) are medium, backed by a preseason roundup or the DC title only. No 2023 caller
 changed mid-season beyond CHI, LAC, PHI and WAS. Upgrade a row only with a source.
 
