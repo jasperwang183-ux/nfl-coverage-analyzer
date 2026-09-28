@@ -1,10 +1,10 @@
 # Architecture — how the pieces actually work
 
-Status-honest companion to the README diagram (updated 2026-09-16). **Built** means
+Status-honest companion to the README diagram (updated 2026-09-28). **Built** means
 in `src/` with tests; **planned** means roadmap.
 
 ```
-Game film ──► YOLO detection ──► homography ──► field-space (x, y) tracks   [built: stills]
+Game film ──► YOLO detection ──► homography ──► field-space (x, y) tracks   [built: stills + clips]
                                                         │
 NGS tracking data (Big Data Bowl) ──────────────────────┤  (same canonical schema)
                                                         ▼
@@ -15,10 +15,10 @@ NGS tracking data (Big Data Bowl) ───────────────�
                                 Feature engineering  [built, see below]
                                                         ▼
                                 Coverage classifier
-                                today: gradient boosting on engineered features
-                                planned: PyTorch sequence model on raw frames
+                                two-head sequence model on raw frames  [built]
+                                gradient boosting on engineered features (fallback)
                                                         ▼
-                                Disguise detection: shown ≠ run  [prototype]
+                                Disguise detection: shown ≠ run  [built]
 ```
 
 Key asymmetry: **the Big Data Bowl tracking data is the training data, not a
@@ -78,27 +78,33 @@ Two variants: RUN (all features, 58.1% on 2018 holdout) / SHOWN (no post-snap,
 54.3%), plus the persisted stills model (snap-only, 54.8%, 33.5% majority
 baseline; `scripts/train_still_model.py` → `models/still_shown.joblib`).
 
-**Planned (roadmap #3): PyTorch sequence model** on raw canonical frames instead
-of hand features:
+**Built (roadmaps #3 and #4): two-head sequence model** (`models/sequence.py`,
+`scripts/train_sequence.py`, weights in `models/sequence_v1.pt`):
 
-1. **Per-frame set encoder** — a frame is an unordered, variable-size set of
-   players, each `(x, y, s, a, dir, side)`; shared per-player MLP + attention
-   pooling (padding + mask for the varying count) → one embedding per frame.
-2. **Temporal encoder** — Transformer encoder or GRU over the 10 Hz embedding
-   sequence.
-3. **Heads** — 8-way coverage class (class-weighted; COVER_3 alone is ~33%) and a
-   separate man/zone head. Pre-snap-frames-only input → "shown"; post-snap window
-   → "run".
+1. **Spatial encoder** - each frame is an unordered set of up to 24 players,
+   positions only (x from the LOS, y from the formation center, side); velocities
+   are finite differences, as on film, so tracking's `s`/`a`/`dir` are ignored.
+   Attention across players gives one embedding per frame.
+2. **Causal temporal encoder** - a transformer over 1 s before the snap to 3 s
+   after, at 10 Hz. The output at frame t sees frames up to t only.
+3. **Heads** - 8-way coverage variant and man/zone on every output. The pre-snap
+   read is the output at the snap ("shown"), the full-play read the output at the
+   last frame ("run"): one model, one pass.
 
-Why it should beat the GBM: it can learn cues never hand-coded (leverage, pattern
-matching, rotation trajectories), and its per-frame input is exactly what the
-vision pipeline emits — so it transfers unchanged to clips (rung 3). ~31K labeled
-plays across 2018+2023 supports a small (1–5M param) model. Note: stills can only
-feed one frame, so the sequence model pays off at clips and beyond, not rung 2.
+Frozen holdout (n = 8,234, scored once): full-play head 86.5% top-1 / 97.0% top-2,
+pre-snap head 59.2%, snap-feature GBM 51.8%, majority 32.8%. On film the pre-snap
+head fills the page's pre-snap card and the full-play head the post-snap card; the
+GBM stays the fallback when the weights are missing. It cannot yet tell two-high
+man from two-high zone on film (one analyst-labeled 2-Man clip read Cover 2 zone).
 
-## Disguise detection (prototype)
+## Disguise detection (`src/nfl_coverage/analysis/`)
 
-Current definition: SHOWN-model confident (p ≥ 0.5) and wrong vs. the played
-coverage — ~15 lines in `train_baseline.py`. Next step is promoting it into
-`src/nfl_coverage/analysis/` with per-team/down/distance rates; two algorithm
-variants are planned for an A/B comparison on separate branches.
+A disguise is the pre-snap read differing from the post-snap read. `shell.py` reads
+the structure (deep count, middle open or closed) at the snap and again after it;
+`disguise.py` puts `shell_rotation` (snap vs. +2 s, rotator named) and
+`model_disagreement` behind one interface; `harness.py` scores them with no hand
+labels (the coverage label implies the played middle-of-field state) and rates
+them by defense, down and distance. On film, the page's two cards carry the same
+comparison and analyst verdicts land in `data/processed/coverage_corrections.jsonl`.
+Methodology and calibration: [DISGUISE_PLAN.md](DISGUISE_PLAN.md).
+
