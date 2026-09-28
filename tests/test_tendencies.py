@@ -131,3 +131,19 @@ def test_lookup_reports_the_teams_own_n_and_plays_it():
     assert t.n == 10
     assert t.plays_it == pytest.approx(t.probs["COVER_4_ZONE"])
     assert td.lookup(tables, 2023, "AAA", "MOF closed") is None
+
+
+def test_the_play_caller_table_covers_every_week_of_every_team_season():
+    from itertools import pairwise
+    from pathlib import Path
+
+    path = Path(td.__file__).parents[1] / "data" / "defensive_play_callers.csv"
+    callers = pd.read_csv(path)
+    last = {2018: 17, 2023: 18}
+    assert set(callers["season"]) == set(last)
+    for (season, team), g in callers.groupby(["season", "team"]):
+        weeks = g.sort_values("first_week")[["first_week", "last_week"]].to_numpy()
+        assert weeks[0][0] == 1 and weeks[-1][1] == last[season], (season, team)
+        assert all(a[1] + 1 == b[0] for a, b in pairwise(weeks)), (season, team)
+    assert callers.groupby("season")["team"].nunique().tolist() == [32, 32]
+    assert set(callers["confidence"]) <= {"high", "medium", "low"}

@@ -1,6 +1,29 @@
 # Session Handoff — updated 2026-09-27
 
-## Next session starts here (2026-09-27, end of day)
+## Team tendencies (2026-09-28)
+
+Roadmap 10 built. `analysis/tendencies.py`, `scripts/build_tendencies.py` (reads every
+snap of weeks 1-13 with the page's `structural_read`, ~3 min, cached to
+`data/processed/tendency_plays.parquet`; tables to `tendencies.parquet`). Shown look =
+0-high / MOF closed / MOF open; situation = early down or 3rd/4th & short/medium/long;
+each cell shrunk toward its parent with k = 80 pseudo-plays. Validation, tables from
+weeks 1-9 scored on 10-13 (n = 6,759): no look 1.665, league by look 1.477, league by
+look x situation 1.451, team x situation 1.383 (1.386 keyed on play-caller: a caller
+who took over mid-season has no history and falls back to the league; kept for the
+convention). Fangio's defenses (2018 CHI, 2023 MIA) are the least likely to play the
+two-high look they show. The page's Disguise card has a "This defense" row (season,
+defense, down, to go) stored per clip as `meta.defense`; the server loads the tables
+once, so restart it after a rebuild. The Dolphins-Chargers clip `b2b4d7899dbc` has MIA
+set as a demo; which side defends there is not known.
+
+Play-callers (`src/nfl_coverage/data/defensive_play_callers.csv`, researched by a
+subagent with sources): 13 2018 rows (BAL CHI IND KC LA LAC MIA NYG OAK PHI SEA SF WAS)
+are the title DC with no source read, confidence low; most 2023 rows rest on one
+roundup (medium). Upgrade them only with a source.
+
+Open: the tables do not learn from ingested film yet; the worktrees under
+`.claude/worktrees/` were not removed (the auto-mode check blocks branch deletion).
+
 
 **First job: the disguised clip.** Game 2023091010 (MIA @ LAC, 2023 wk 1) is in BDB 2026
 with 60 labeled pass plays; 17 show the other middle-of-field state than they play. The test
