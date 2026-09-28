@@ -7,6 +7,8 @@ data/web/
 data/web_archive/
 data/verify/
 *.csv
+# public coaching facts, not competition data
+!src/nfl_coverage/data/defensive_play_callers.csv
 *.parquet
 *.zip
 

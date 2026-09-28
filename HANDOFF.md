@@ -18,8 +18,9 @@ set as a demo; which side defends there is not known.
 
 Play-callers (`src/nfl_coverage/data/defensive_play_callers.csv`, researched by a
 subagent with sources): 13 2018 rows (BAL CHI IND KC LA LAC MIA NYG OAK PHI SEA SF WAS)
-are the title DC with no source read, confidence low; most 2023 rows rest on one
-roundup (medium). Upgrade them only with a source.
+are the title DC with no source read, confidence low; six 2023 rows (CAR DEN JAX LV
+MIN NYG) are medium, backed by a preseason roundup or the DC title only. No 2023 caller
+changed mid-season beyond CHI, LAC, PHI and WAS. Upgrade a row only with a source.
 
 Open: the tables do not learn from ingested film yet; the worktrees under
 `.claude/worktrees/` were not removed (the auto-mode check blocks branch deletion).
