@@ -1,5 +1,37 @@
 # Session Handoff — updated 2026-09-27
 
+## Next session starts here (2026-09-27, end of day)
+
+**First job: the disguised clip.** Game 2023091010 (MIA @ LAC, 2023 wk 1) is in BDB 2026
+with 60 labeled pass plays; 17 show the other middle-of-field state than they play. The test
+clip is **Q3 4:39, MIA 3rd & 12, Tagovailoa deep left intercepted by J. Jackson**: tracking
+shows a two-high look rotating to COVER_1_MAN (`shell_rotation_label` rotate_to_mof_closed).
+Others with a measured rotation: Q3 4:45, Q2 4:00, Q4 10:51 (MIA ball), Q2 8:08, Q3 3:53
+(LAC ball). The list comes from `disguise_scores.parquet` joined to supplementary_data on
+game clock. Two capture attempts never produced a file: the recorder (Xbox Game Bar, saves to
+`Videos\Captures`) only writes on stop. Once a new file is there, run it through the page and
+check the Disguise card against the label.
+
+**The page server dies with the session.** The desktop app stops the preview server when a
+turn ends or after about 30 min, and uploads then fail with a red error. Start it again
+before the user uploads, or have them run `.venv\Scripts\python scripts\serve.py`.
+
+**Analyst labels so far** (all in `data/processed/coverage_corrections.jsonl`, targets `shell`
+and `exact`): clip 1 Cover 4; 1326 Cover 2 zone (shell rows marked 2-high closed, then 1-high
+closed, though the tracks show both safeties holding halves: unresolved); 1533 Cover 1 man
+(0-high look; the post-snap "2-high" row is likely a duplicate deep track); 15-34-46
+(`fac52c45464f`) 2-Man from a three-high zone look, press on #18. The sequence model got the
+first three right and called 2-Man "Cover 2 zone": it cannot yet tell two-high man from zone
+on film.
+
+**Built today after the section below:** a verdict per card for the model's exact call
+(`target: exact`); the `coverage-knowledge` skill (`.claude/skills/`), paraphrased from
+breakdownsports, blitzology, matchquarters and Bleacher Report, with the film lessons; the
+officials fix in `vision/track.py` (4 yd snap sideline margin, ruled-out ids stay "-",
+sideline strays in the offense's backfield are not sided). Tested and rejected: counting side
+defenders at 7-9 yd as deep (shown-MOF agreement with labels fell from 67.7% to at most
+66.1% on weeks 1-4); the 9 yd line stays.
+
 ## Sequence model on the cards, and the play window (2026-09-27, later)
 
 **Cards.** Each card carries its own sequence-model head (`CoverageReport.pre_model` /
