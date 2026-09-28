@@ -208,7 +208,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const ACTIVE = ["calibrating", "queued", "tracking", "reading"];
-let clip = null, pickedT = null, poller = null, calls = null, linesFor = null;
+let clip = null, pickedT = null, poller = null, calls = null, linesFor = null, defenses = null;
 
 function esc(s) { return String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 function conf(c) { return c ? `<span class="conf ${esc(c)}">${esc(c)}</span>` : ""; }
@@ -255,6 +255,7 @@ $("recent").onchange = (e) => e.target.value && openClip(e.target.value);
 async function openClip(id) {
   clip = await api(`/api/clips/${id}`);
   calls = calls || await api("/api/calls").catch(() => ({ shells: [], variants: [], other: "Other" }));
+  defenses = defenses || await api("/api/defenses").catch(() => ({}));
   history.replaceState(null, "", `/?clip=${id}`);
   $("uploadCard").classList.add("hidden"); $("clipView").classList.remove("hidden");
   $("clipName").textContent = clip.name;
@@ -572,6 +573,44 @@ function modelSection(m, from, key) {
     <div class="muted" style="font-size:13px">${conf(m.confidence)}${mz ? ` ${esc(mz[0] === "MAN_COVERAGE" ? "man" : "zone")} ${(100 * mz[1]).toFixed(0)}%` : ""}</div>
     ${key ? verdict(key, `Is ${top[0][0]} right?`) : ""}`;
 }
+// how often the chosen defense keeps the look the pre-snap card read (roadmap 10)
+function tendencySection() {
+  const seasons = Object.keys(defenses || {});
+  if (!seasons.length) return "";
+  const ctx = clip.defense || { season: Number(seasons[seasons.length - 1]) };
+  const opt = (v, label, on) => `<option value="${esc(v)}"${on ? " selected" : ""}>${esc(label)}</option>`;
+  const teams = (s) => [opt("", "defense", !ctx.defense), ...(defenses[s] || []).map((d) => opt(d, d, d === ctx.defense))].join("");
+  return `<h3 style="margin-top:14px">This defense</h3>
+    <div class="row">
+      <select id="tdSeason">${seasons.map((x) => opt(x, x, Number(x) === ctx.season)).join("")}</select>
+      <select id="tdTeam">${teams(String(ctx.season))}</select>
+      <select id="tdDown">${[opt("", "down", !ctx.down), ...[1, 2, 3, 4].map((d) => opt(d, `${d}${["st", "nd", "rd", "th"][d - 1]} down`, d === ctx.down))].join("")}</select>
+      <input type="number" id="tdToGo" min="1" max="99" placeholder="to go" value="${esc(ctx.to_go ?? "")}" style="width:5em">
+      <button class="ghost" id="tdBtn">Look up</button>
+      <span class="muted" id="tdMsg"></span>
+    </div>
+    ${tendencyText(clip.tendency)}`;
+}
+function tendencyText(t) {
+  if (!t) return "";
+  const pct = (x) => `${(100 * x).toFixed(0)}%`;
+  const where = t.situation === "any" ? "" : ` on ${t.situation}`;
+  const keeps = t.look === "0-high" ? "plays Cover 0 from it" : `is still ${t.look} after the snap`;
+  if (!t.team) return `<p class="muted">No ${esc(t.look)} plays for this defense${esc(where)}.</p>`;
+  const m = t.team, top = Object.entries(m.probs).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  return `<p style="margin:10px 0 4px">Showing <b>${esc(t.look)}</b>${esc(where)}, ${esc(m.defense)} ${m.season}${m.play_caller ? ` (${esc(m.play_caller)})` : ""} ${keeps} <b>${pct(m.plays_it)}</b> of the time; the league ${pct(t.league.plays_it)}.</p>
+    <div class="bars">${top.map(([c, p]) => `<div class="b"><span>${esc(c)}</span><div class="track"><div class="fill" style="width:${(100 * p).toFixed(0)}%"></div></div><span>${pct(p)}</span></div>`).join("")}</div>
+    <div class="muted" style="font-size:13px">${plural(m.n, "play", "plays")} of theirs from this look, weeks 1-13, blended with the league's so a small sample does not swing it.</div>`;
+}
+async function sendDefense() {
+  const num = (id) => ($(id).value === "" ? null : Number($(id).value));
+  if (!$("tdTeam").value) { $("tdMsg").textContent = "Pick a defense."; return; }
+  $("tdMsg").textContent = "Looking up...";
+  try {
+    clip = await post(`/api/clips/${clip.id}/defense`, { season: Number($("tdSeason").value), defense: $("tdTeam").value, down: num("tdDown"), to_go: num("tdToGo") });
+    render();
+  } catch (e) { $("tdMsg").innerHTML = `<span style="color:var(--low)">${esc(e.message)}</span>`; }
+}
 function readCard(phase, title, when, r, extra = "") {
   if (!r) return `<h3>${title}</h3><div class="muted">not read: the tracked window ends too soon after the snap</div>`;
   return `<h3>${title} <span class="when">· ${esc(when)}</span></h3>
@@ -604,6 +643,7 @@ function renderResult(res) {
   $("disguiseCard").innerHTML = `<h3>Disguise</h3>
     <div class="verdict">${esc(rep.shown.shell)}<span class="arrow">→</span>${esc(rep.played ? rep.played.shell : "?")}</div>
     <div>${esc(rep.disguise_text)}</div>
+    ${tendencySection()}
     ${caveats.length ? `<div class="note"><b>Caveats</b><ul>${caveats.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}
     ${res.warnings.length ? `<div class="note"><b>Your values disagree with the formation read</b><ul>${res.warnings.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}`;
   document.querySelectorAll("[data-correct]").forEach((b) => b.onclick = () => {
@@ -611,6 +651,12 @@ function renderResult(res) {
     else $(`wrong-${b.dataset.key}`).classList.remove("hidden");
   });
   document.querySelectorAll("[data-save]").forEach((b) => b.onclick = () => sendVerdict(b.dataset.save, false));
+  if ($("tdBtn")) {
+    $("tdBtn").onclick = sendDefense;
+    $("tdSeason").onchange = () => {
+      $("tdTeam").innerHTML = `<option value="">defense</option>` + (defenses[$("tdSeason").value] || []).map((d) => `<option>${esc(d)}</option>`).join("");
+    };
+  }
   $("toSnap").onclick = () => { $("video").currentTime = res.snap.t; $("video").pause(); };
   $("toPlayed").onclick = () => { $("video").currentTime = res.played_frame.t; $("video").pause(); };
 }
