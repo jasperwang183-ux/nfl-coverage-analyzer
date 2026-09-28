@@ -27,8 +27,8 @@ A computer vision + machine learning system that analyzes NFL footage and tracki
  ┌────────────────────────────────┐              ┌────────────────────────────────────┐
  │ Shell reader (rule-based):     │              │ Coverage classifier: Cover 0/1/2/  │
  │ deep count, middle open/closed,│              │ 3/4/6, man vs. zone — shown vs. run│
- │ corner technique, at the snap  │              │ (gradient boosting now → sequence  │
- │ and again post-snap            │              │ model with two heads)              │
+ │ corner technique, at the snap  │              │ (two-head sequence model; snap-    │
+ │ and again post-snap            │              │ feature gradient boosting fallback)│
  └────────────────────────────────┘              └────────────────────────────────────┘
           │                                                            │
           └────────────────────────────┬───────────────────────────────┘
@@ -81,14 +81,15 @@ nfl-coverage-analyzer/
 ├── notebooks/             # exploration & prototyping
 ├── scripts/               # download_data.py, train_*.py, calibrate_auto.py, serve.py,
 │                          # analyze_still.py, ingest_clip.py, track_clip.py, detect_snap.py,
-│                          # run_disguise.py
+│                          # run_disguise.py, verify.py
 └── src/nfl_coverage/
     ├── data/              # loading & cleaning tracking CSVs; play context (team/down/distance)
     ├── features/          # pre/post-snap feature engineering
-    ├── models/            # coverage classifiers + persistence
+    ├── models/            # coverage classifiers, the two-head sequence model, persistence
     ├── vision/            # detect, teams, homography, fieldlines (auto-calibration),
     │                      # visibility guard, still bridge, clip ingest, track (ByteTrack),
-    │                      # snap detection, formation (LOS / offense / ball), pipeline
+    │                      # snap detection, formation (LOS / offense / ball), overlay,
+    │                      # verify (film health checks), pipeline
     ├── analysis/          # shell reader, disguise components, harness, report, viz
     └── web/               # the page: FastAPI app + one static page
 ```
@@ -99,15 +100,19 @@ nfl-coverage-analyzer/
 .venv\Scripts\python scripts\serve.py      # then open http://127.0.0.1:8000
 ```
 
-Upload an mp4, click a still pre-snap frame, name the leftmost detected yard line (its
-painted number and which way the numbers run) and check the fitted field grid, then
-Analyze. Tracking runs in the background (about 2-5 minutes on a CPU at 1920); the read
-appears under the video: shown and played structure with confidence and reasons, the
-variant model, the disguise verdict, caveats, the annotated snap frame and a top-down
-render. The snap, offense side, line of scrimmage and ball position are inferred from the
-film and can be typed over; a re-read takes seconds (tracked frames are cached). Clips and
-results live in `data/web/` (gitignored); snap times set by hand are logged against the
-detector's call in `data/processed/snap_labels.jsonl`.
+Upload an mp4. The page picks a still pre-snap frame, names the yard lines from the painted
+numbers and calibrates on its own; it asks for the frame and naming only when that fails
+(the manual controls sit in a collapsed Adjust section). Tracking runs in the background
+(about a minute on a GPU). The read is drawn on the playing video (boxes, deep defenders,
+the LOS) with a timeline for the window, snap and played read, and two cards sit under it:
+the pre-snap card (the shown structure, its confidence and why it is not higher, and the
+sequence model's pre-snap head) and the post-snap card (the played structure from +2 to +5 s,
+the full-play head's top 3, the rotator's move). The disguise verdict compares the two.
+The snap, offense side, line of scrimmage and ball position are inferred from the film and
+can be typed over; a re-read takes seconds (tracked frames are cached). Correct / Wrong on
+each card appends to `data/processed/coverage_corrections.jsonl`. Clips and results live
+in `data/web/` (gitignored); snap times set by hand are logged against the detector's call
+in `data/processed/snap_labels.jsonl`.
 
 ### Running film through it from the command line
 
@@ -134,12 +139,12 @@ the state of play and known weak spots.
 - [x] **0. Setup** — download BDB 2021/2026 data, verify schemas and label joins (see docs/DATA_NOTES.md)
 - [x] **1. Data pipeline** — parse tracking CSVs, standardize field coordinates, snap-align frames (`rel_frame`), cache to parquet
 - [x] **2. Feature engineering** — snap alignment (shell, depth, press), post-snap movement (zone drops, man-mirroring), pre-snap motion (2018 data)
-- [ ] **3. Coverage classifier** — ✅ baseline (gradient boosting: RUN 58.1% / SHOWN 54.3% on 8 classes vs. 33.5% majority); next: PyTorch sequence model on raw per-frame player states
-- [ ] **4. Pre-snap vs. post-snap heads** — one model on pre-snap frames only ("what are they showing"), one on post-snap frames ("what did they run")
+- [x] **3. Coverage classifier** — ✅ baseline (gradient boosting: RUN 58.1% / SHOWN 54.3% on 8 classes vs. 33.5% majority); ✅ PyTorch spatio-temporal sequence model on raw per-frame player states (`models/sequence.py`, `scripts/train_sequence.py`): 86.5% top-1 / 97.0% top-2 on the frozen holdout (n = 8,234) vs. 51.8% for the snap-feature model
+- [x] **4. Pre-snap vs. post-snap heads** — ✅ one model, two heads: a causal pre-snap head ("what are they showing", 59.2% top-1 on the holdout) and a full-play head ("what did they run", 86.5%); they disagree on 39.7% of plays and the full-play head is right on 80% of those. Both heads are on the page's cards; next: telling two-high man from two-high zone on film
 - [ ] **5. Disguise detection** — ✅ rule-based shell reader (deep count, middle open/closed, corner technique) as the primary "shown"; ✅ `shell_rotation` (snap vs +2 s, rotator named) and `model_disagreement` components behind one interface; ✅ harness with no hand labels: the coverage label implies the played middle-of-field state (0.82 accuracy on week 1 of both seasons), rates by defense/down/distance, film confirmations logged to `data/processed/disguise_labels.jsonl`; next: corner-technique, pressure-bluff and man/zone-mask components
-- [ ] **6. Vision pipeline** — ✅ YOLO (input size 1280–1920 for all-22 frames), two-mode jersey descriptor with officials by stripes and sides voted with formation geometry, ✅ automatic field calibration from the painted markings (`vision/fieldlines.py`, ~0.2 yd, no clicking), ✅ field-visibility guard, ✅ ByteTrack player tracking with the calibration chained frame to frame (`vision/track.py`); next: fine-tuned detector, snap detection from motion
+- [ ] **6. Vision pipeline** — ✅ YOLO (input size 1280–1920 for all-22 frames), two-mode jersey descriptor with officials by stripes and sides voted with formation geometry, ✅ automatic field calibration from the painted markings (`vision/fieldlines.py`, ~0.2 yd, no clicking), ✅ field-visibility guard, ✅ ByteTrack player tracking with the calibration chained frame to frame (`vision/track.py`); ✅ snap detection from motion (the line must be seen set), ✅ calibration re-anchored on each frame's own yard lines, ✅ automatic yard-line naming (`fieldlines.auto_name`); next: fine-tuned detector (dense offensive lines merge into a few boxes)
 - [x] **7. Still-image mode** — screenshot → detection → calibration → canonical frame → snap-feature model (54.8% holdout / 33.5% majority) via `scripts/analyze_still.py`, with the analyst QA loop (`data/processed/still_reviews.jsonl`)
-- [ ] **8. Clip mode & overlay** — ✅ `scripts/ingest_clip.py`: mp4 → sampled frames → pre-snap and post-snap reads → `CoverageReport` (structure + confidence, family, variant, disguise, reasons) with annotated frames; ✅ `scripts/track_clip.py`: canonical 10 Hz tracks from film so the tracking-data components run unchanged (clip 1's tracked read matches the analyst end to end with the snap, LOS and offense side inferred; clip 2's tracked read uses a keyframe calibration found to be yards off below the hashes and is suspect — see HANDOFF.md); the still path is verified on two 2026 all-22 clips (Cover 4 held; Cover 1 look → Cover 3 at the throw); ✅ the page (`scripts/serve.py`): upload, calibrate one frame, the read under the video, overrides re-read in seconds; next: annotated overlay on the clip itself, sequence model with two heads
+- [ ] **8. Clip mode & overlay** — ✅ `scripts/ingest_clip.py`: mp4 → sampled frames → pre-snap and post-snap reads → `CoverageReport` (structure + confidence, family, variant, disguise, reasons) with annotated frames; ✅ `scripts/track_clip.py`: canonical 10 Hz tracks from film so the tracking-data components run unchanged (clip 1's tracked read matches the analyst end to end with the snap, LOS and offense side inferred; clip 2's tracked read uses a keyframe calibration found to be yards off below the hashes and is suspect — see HANDOFF.md); the still path is verified on two 2026 all-22 clips (Cover 4 held; Cover 1 look → Cover 3 at the throw); ✅ the page (`scripts/serve.py`): upload, calibrate one frame, the read under the video, overrides re-read in seconds; ✅ automatic ingest (no clicking), the read drawn on the playing video (`vision/overlay.py`), pre- and post-snap cards with the sequence model's calls and Correct / Wrong; ✅ `scripts/verify.py`: film health checks over the 11 manifest clips (9 read) and frozen-holdout scoring; next: film clips with a known disguise, a result version stamp so stale clips are flagged
 - [ ] **9. Live feed overlay** — real-time(ish) per-play coverage overlay on a live video source (GPU + elevated camera angle required)
 - [ ] **10. Team disguise tendencies** — per defense, `P(run coverage | shown shell, situation)`: how often a team that shows a given look actually plays it, and what it rotates to when it doesn't. Built from the 2018 and 2023 seasons (shown = the shell reader / pre-snap head, run = the coverage label), shrunk toward the league table because a team has ~15 plays per shown×run cell a season, and updated with film the page ingests. Surfaced as a prior on the page ("this defense shows two-high and plays it N% of the time"). Tendencies go stale when a defensive coordinator changes, so each table carries its season and coordinator. There is no playbook data: "current playbook" means the most recent seasons plus ingested film.
 
