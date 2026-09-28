@@ -1,18 +1,18 @@
 season,team,first_week,last_week,play_caller,title_dc,confidence,source
 2018,ARI,1,17,Al Holcomb,Al Holcomb,high,https://arizonasports.com/story/1398719/defensive-coordinator-al-holcomb-talent-cardinals-head-start/
 2018,ATL,1,17,Marquand Manuel,Marquand Manuel,high,https://www.ajc.com/sports/football/quinn-takes-over-playing-call-like-doing/tMUniC27nVMFETcHkkvuQI/
-2018,BAL,1,17,Wink Martindale,Wink Martindale,low,
+2018,BAL,1,17,Wink Martindale,Wink Martindale,high,https://www.baltimoreravens.com/news/news-notes-8-13-wink-martindale-is-having-a-lot-of-fun-calling-plays
 2018,BUF,1,17,Leslie Frazier,Leslie Frazier,high,https://africa.espn.com/blog/buffalo-bills/post/_/id/32272/bills-pull-defensive-u-turn-but-dont-point-to-vontae-davis-exit
 2018,CAR,1,13,Eric Washington,Eric Washington,high,https://www.espn.com/espn/wire/_/section/nfl/id/25442493
 2018,CAR,14,17,Ron Rivera,Eric Washington,high,https://www.espn.com/espn/wire/_/section/nfl/id/25442493
-2018,CHI,1,17,Vic Fangio,Vic Fangio,low,
+2018,CHI,1,17,Vic Fangio,Vic Fangio,high,https://www.chicagobears.com/news/bears-defense-boasts-continuity-trust-20664620
 2018,CIN,1,10,Teryl Austin,Teryl Austin,high,https://www.cbssports.com/nfl/news/bengals-reportedly-fire-defensive-coordinator-teryl-austin-marvin-lewis-to-take-over-playcalling-duties
 2018,CIN,11,17,Marvin Lewis,Marvin Lewis (acting),high,https://www.cbssports.com/nfl/news/bengals-reportedly-fire-defensive-coordinator-teryl-austin-marvin-lewis-to-take-over-playcalling-duties
 2018,CLE,1,17,Gregg Williams,Gregg Williams,medium,https://www.si.com/nfl/2018/10/29/cleveland-browns-head-coach-hue-jackson-fired
 2018,DAL,1,17,Kris Richard,Rod Marinelli,high,https://www.espn.com/blog/dallas/cowboys/post/_/id/4770928/
 2018,DEN,1,17,Joe Woods,Joe Woods,medium,https://247sports.com/nfl/denver-broncos/Article/Vance-Joseph-to-be-more-involved-in-defensive-playcalling-vs-Rams-per-report-123310232/
 2018,DET,1,17,Paul Pasqualoni,Paul Pasqualoni,high,http://www.espn.com/blog/detroit-lions/post/_/id/33621/what-paul-pasqualoni-calling-defensive-plays-for-detroit-lions-could-mean
-2018,GB,1,17,Mike Pettine,Mike Pettine,medium,https://www.espn.com/blog/green-bay-packers/post/_/id/45531/mike-pettine-joe-philbin-just-what-packers-mike-mccarthy-need
+2018,GB,1,17,Mike Pettine,Mike Pettine,high,https://www.packers.com/news/mike-pettine-takes-big-picture-approach-to-play-calling
 2018,HOU,1,17,Romeo Crennel,Romeo Crennel,high,https://www.espn.com/blog/houston-texans/post/_/id/22278/texans-d-welcomes-romeo-crennels-return-to-calling-plays
 2018,IND,1,17,Matt Eberflus,Matt Eberflus,low,
 2018,JAX,1,17,Todd Wash,Todd Wash,medium,https://www.jaguars.com/news/doug-marrone-monday-november-26-2018
@@ -27,15 +27,15 @@ season,team,first_week,last_week,play_caller,title_dc,confidence,source
 2018,NYJ,1,4,Kacy Rodgers,Kacy Rodgers,high,https://www.espn.com/nfl/story/_/id/24991169/jets-defensive-coordinator-kacy-rodgers-medically-cleared-resume-job
 2018,NYJ,5,6,Todd Bowles,Kacy Rodgers,high,https://www.espn.com/nfl/story/_/id/24991169/jets-defensive-coordinator-kacy-rodgers-medically-cleared-resume-job
 2018,NYJ,7,17,Kacy Rodgers,Kacy Rodgers,medium,https://www.newyorkjets.com/news/jets-coordinator-kacy-rodgers-excited-to-be-back-around-family-unit
-2018,OAK,1,17,Paul Guenther,Paul Guenther,low,
-2018,PHI,1,17,Jim Schwartz,Jim Schwartz,low,
+2018,OAK,1,17,Paul Guenther,Paul Guenther,high,https://www.nbcsportsbayarea.com/bayarea/raiders/paul-guenther-adept-teaching-raiders-play-new-style-defense
+2018,PHI,1,17,Jim Schwartz,Jim Schwartz,high,https://www.inquirer.com/philly/sports/eagles/eagles-defense-jim-schwartz-rankings-secondary-doug-pederson-film-review-20181116.html
 2018,PIT,1,17,Mike Tomlin,Keith Butler,high,https://steelersnow.com/keith-butler-says-mike-tomlin-has-called-steelers-defensive-plays-since-late-part-of-dick-lebeaus-tenure/
-2018,SEA,1,17,Ken Norton Jr.,Ken Norton Jr.,low,
-2018,SF,1,17,Robert Saleh,Robert Saleh,low,
+2018,SEA,1,17,Ken Norton Jr.,Ken Norton Jr.,high,https://www.si.com/nfl/seahawks/news/did-seahawks-make-right-decision-bidding-farewell-to-ken-norton-jr
+2018,SF,1,17,Robert Saleh,Robert Saleh,medium,https://www.si.com/nfl/49ers/news/what-kyle-shanahan-can-learn-from-49ers-defensive-coordinator-robert-saleh
 2018,TB,1,6,Mike Smith,Mike Smith,high,https://www.nfl.com/news/buccaneers-fire-defensive-coordinator-mike-smith-0ap3000000974617
 2018,TB,7,17,Mark Duffner,Mark Duffner,high,https://www.nfl.com/news/buccaneers-fire-defensive-coordinator-mike-smith-0ap3000000974617
 2018,TEN,1,17,Dean Pees,Dean Pees,high,https://www.nbcsports.com/nfl/profootballtalk/rumor-mill/news/titans-defensive-coordinator-will-call-plays-unless-mike-vrabel-tells-him-what-to-do
-2018,WAS,1,17,Greg Manusky,Greg Manusky,low,
+2018,WAS,1,17,Greg Manusky,Greg Manusky,high,https://www.espn.com/nfl/story/_/id/25597309/dj-swearinger-critical-washington-redskins-defensive-coordinator-greg-manusky
 2023,ARI,1,18,Nick Rallis,Nick Rallis,high,https://www.nbcsports.com/nfl/profootballtalk/rumor-mill/news/jonathan-gannon-confirms-nick-rallis-will-call-the-defense
 2023,ATL,1,18,Ryan Nielsen,Ryan Nielsen,high,https://www.atlantafalcons.com/news/ryan-nielsen-jerry-gray-defensive-play-calling-carolina-panthers
 2023,BAL,1,18,Mike Macdonald,Mike Macdonald,high,https://www.chargers.com/news/los-angeles-chargers-head-coach-search-ravens-dc-mike-macdonald-5-things
