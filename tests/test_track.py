@@ -153,3 +153,27 @@ def test_cap_sides_moves_the_surplus_back_across_the_line():
     # nothing moves when both sides are legal
     ok = np.array(["Offense"] * 11 + ["Defense"] * 11)
     assert (cap_sides(ok, x[:22], los, "right") == ok).all()
+
+
+def test_a_line_defender_who_drops_into_coverage_is_kept():
+    calib = _identity_calib()  # 9.33 px per yd along x; offense left, so deeper is +x
+
+    def frame(i):
+        boxes = np.array(
+            [
+                [300, 150, 320, 200],  # 1: offense, off the line
+                [380, 150, 400, 200],  # 4: offensive lineman
+                [420 + 9.33 * i, 150, 440 + 9.33 * i, 200],  # 2: mugged, drops 1 yd a frame
+                [430, 200, 450, 250],  # 3: defensive tackle, holds
+            ],
+            float,
+        )
+        return TrackedFrame(
+            i, i * 0.1, np.zeros((360, 640, 3), np.uint8), boxes, np.array([1, 4, 2, 3]), np.ones(4)
+        )
+
+    sides = SideAssignment(
+        {1: "Offense", 4: "Offense", 2: "Defense", 3: "Defense"}, {2, 3, 4}, 0, 0, None
+    )
+    tr = canonical_tracks([frame(i) for i in range(7)], [calib] * 7, sides, 0, "left")
+    assert sorted(tr["nfl_id"].unique()) == [1, 2]

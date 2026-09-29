@@ -48,6 +48,12 @@ SIDELINE_Y_MARGIN = -0.5
 # were sided as the widest defenders. (On clip 1 a line judge 0.6 yd inside the far
 # sideline took the corner's place and turned a corner bail into a 1.0 "rotation_up".)
 SNAP_SIDELINE_CLEAR = 4.0
+# A defender in the line band at the snap is a lineman unless he drops into coverage: a
+# mugged linebacker crouches at the line like a tackle (SF's Warner, 2023 wk 2, measured
+# 0.9 yd deep on film, as crouched as the tackles beside him) and then runs the middle.
+# Tracking data carries every linebacker and no linemen, so keep the ones who drop.
+DROPPER_GAIN_YD = 4.0
+DROPPER_WINDOW_S = 2.5
 
 
 @dataclass
@@ -272,6 +278,20 @@ def _sideline_stray(xy: np.ndarray, side: str, los: float | None, offense: str) 
     return behind > 0 and min(xy[1], FIELD_WIDTH - xy[1]) < SNAP_SIDELINE_CLEAR
 
 
+def _linemen(df: pd.DataFrame, line_ids: set[int], step_s: float) -> set[int]:
+    """Line-band defenders who never gain DROPPER_GAIN_YD of depth within DROPPER_WINDOW_S."""
+    d = df[df["nfl_id"].isin(line_ids) & (df["side"] == "Defense")]
+    early = d[(d["rel_frame"] >= 0) & (d["rel_frame"] * step_s <= DROPPER_WINDOW_S)]
+    start = d[d["rel_frame"] == 0].set_index("nfl_id")["x"]
+    gain = (
+        (early.set_index("nfl_id")["x"] - start.reindex(early["nfl_id"]).to_numpy())
+        .groupby(level=0)
+        .max()
+    )
+    droppers = set(gain[gain >= DROPPER_GAIN_YD].index.astype(int))
+    return {int(i) for i in d["nfl_id"].unique()} - droppers
+
+
 def canonical_tracks(
     frames: list[TrackedFrame],
     calibs: list[FieldCalibration],
@@ -318,7 +338,8 @@ def canonical_tracks(
                 )
         for tid, (x, y) in zip(ids, xy):
             side = side_by_id.get(int(tid))
-            if side in (None, "-") or (drop_line and int(tid) in sides.line_ids):
+            line = int(tid) in sides.line_ids
+            if side in (None, "-") or (drop_line and line and side != "Defense"):
                 continue
             if offense == "right":
                 x, y = FIELD_LENGTH - x, FIELD_WIDTH - y
@@ -337,6 +358,8 @@ def canonical_tracks(
     df = pd.DataFrame(rows)
     if df.empty:
         raise ValueError("no tracked players with a side; check sides/calibration")
+    if drop_line:
+        df = df[~df["nfl_id"].isin(_linemen(df, sides.line_ids, step_s))]
     df = df.sort_values(["nfl_id", "rel_frame"]).reset_index(drop=True)
     g = df.groupby("nfl_id")
     dx = g["x"].diff()
