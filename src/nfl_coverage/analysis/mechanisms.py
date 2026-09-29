@@ -17,7 +17,6 @@ from typing import Literal
 
 import pandas as pd
 
-from nfl_coverage.analysis.roles import LINE_DEPTH
 from nfl_coverage.features.alignment import KEYS
 
 Kind = Literal["coverage", "pressure", "technique"]
@@ -33,10 +32,14 @@ class Mechanism:
 
 
 def _deep_middle_run(p: pd.DataFrame) -> pd.Series:
-    """A box defender who commits deep and is in the deep middle by the landmark."""
+    """A box defender who commits deep and is in the deep middle by the landmark.
+
+    A mugged linebacker counts (Warner on SF's Tampa 2 of 2023 wk 2 aligned 1.9 yd off
+    the ball): on weeks 1-4 the 26 runners aligned inside 3 yd were all linebackers or
+    safeties, and keeping them raised the lift (4.39 -> 4.44).
+    """
     return (
         (p["role"] == "box")
-        & (p["align_depth"] >= LINE_DEPTH)
         & (p["commit_v_depth"] >= 1.5)
         & (p["landmark_depth"] >= 9.0)
         & (p["landmark_lat"].abs() <= 4.0)
@@ -93,13 +96,13 @@ HIT_COLUMNS = ["mechanism", "kind", "nfl_id", "t", "text"]
 def mechanism_hits(
     phases: pd.DataFrame, mechanisms: tuple[Mechanism, ...] = MECHANISMS
 ) -> pd.DataFrame:
-    """KEYS + HIT_COLUMNS: one row per play and mechanism, the defender who ran it deepest."""
+    """KEYS + HIT_COLUMNS: one row per play and mechanism, the defender who ran it fastest."""
     parts = []
     for m in mechanisms:
         hit = phases[m.fires(phases).fillna(False)]
         if hit.empty:
             continue
-        best = hit.loc[hit.groupby(KEYS)["landmark_depth"].idxmax()]
+        best = hit.loc[hit.groupby(KEYS)["commit_v_depth"].idxmax()]
         parts.append(
             best[KEYS].assign(
                 mechanism=m.name,
