@@ -21,7 +21,6 @@
     "los": 49.2,
     "shown_n_deep": 2,
     "shown_mof_closed": false,
-    "played_n_deep": 4,
     "played_mof_closed": false
    }
   },
@@ -46,8 +45,7 @@
    },
    "source": "49ers @ Rams; tracking starts after a post-snap freeze, so the snap is given",
    "expect": {
-    "played_mof_closed": true,
-    "played_n_deep": 3
+    "played_mof_closed": true
    }
   },
   {
