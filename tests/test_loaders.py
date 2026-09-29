@@ -63,6 +63,41 @@ def test_canonicalize_bdb2021_missing_label_is_nan():
     assert out["coverage_type"].isna().all()
 
 
+def test_canonicalize_bdb2021_frame_shifted_player_does_not_move_the_snap():
+    """Three players + ball over 4 frames, snap at frame 3; player 300's rows are
+    frame-shifted and carry a stray ball_snap at frame 1 (as on ~60 real plays)."""
+    ids = [100.0, 200.0, 300.0, np.nan]
+    teams = ["home", "away", "away", "football"]
+    rows = []
+    for frame in range(1, 5):
+        for nfl_id, team in zip(ids, teams, strict=True):
+            shifted = nfl_id == 300.0
+            rows.append(
+                {
+                    "gameId": 1,
+                    "playId": 10,
+                    "nflId": nfl_id,
+                    "frameId": frame,
+                    "team": team,
+                    "event": "ball_snap" if frame == (1 if shifted else 3) else None,
+                    "x": 50.0,
+                    "y": 20.0,
+                    "s": 0.0,
+                    "a": 0.0,
+                    "o": 0.0,
+                    "dir": 0.0,
+                    "position": "CB",
+                    "playDirection": "right",
+                }
+            )
+    _, plays, games, labels = _bdb2021_fixture()
+    out = _canonicalize_bdb2021(pd.DataFrame(rows), plays, games, labels)
+
+    # every player (the shifted one included) is aligned on the frame most rows agree on
+    assert (out["rel_frame"] == out["frame_id"] - 3).all()
+    assert sorted(out["rel_frame"].unique()) == [-2, -1, 0, 1]
+
+
 def test_canonicalize_bdb2026_rel_frame_and_labels():
     tracking = pd.DataFrame(
         {

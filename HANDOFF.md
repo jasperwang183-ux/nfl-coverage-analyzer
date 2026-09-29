@@ -1,4 +1,30 @@
-# Session Handoff — updated 2026-09-27
+# Session Handoff — updated 2026-09-29
+
+## 2018 snap alignment fixed (2026-09-29)
+
+`_canonicalize_bdb2021` took the snap as the first `ball_snap` frame. On 61 plays one row's
+events are frame-shifted (38 in game 2018092301; play 453: Tony Jefferson's `ball_snap` at
+frame 2, everyone else 11). The snap is now the frame most rows agree on, football row
+included, earliest on a tie (`standardize.majority_event_frame`, via
+`loaders.bdb2021_snap_frames`); `releases.py` uses both, its own copies are gone.
+
+**46 of 19,239 cached 2018 plays changed snap** (rel_frame moved 9-10 frames, 4 on one):
+week 3 (38), 7 (1), 15 (2), 17 (5). 2023 is untouched (its snap is frame 1). Five more
+plays had the stray on the football row, which the loader already dropped, so their frames
+were right, but the old `releases.parquet` counted the ball and was off there (weeks 3, 6,
+12, 13, 16). **Holdout: 7 plays in 2018 weeks 15 (game 2018121605) and 17 (2018123006)
+changed rel_frame, and 1 week-16 play (2018122400/2493) changed release only.** Nothing was
+retrained or re-scored.
+
+Rebuilt on the new snaps, each diffed against the old file: `data/processed/frames/bdb2021_w*`
+(only `rel_frame` differs, on exactly the 46 plays), `features.parquet` (the same 46 plays,
+nothing else), `releases.parquet` (46 plays: 41 of the 46 plus the 5 ball-row plays; the
+other 5 have no release).
+**Still on the old snaps** (rebuild when next needed): `sequence_v1_plays.parquet` /
+`sequence_v1_tensors.pt` and `models/sequence_v1.pt` trained on them (its holdout score
+stays as recorded; never re-score), `tendency_plays.parquet` / `tendencies.parquet` (weeks
+1-13: 39 of the plays), `disguise_scores.parquet`, `models/still_shown.joblib`, and any
+`verify.py bdb` numbers from before 2026-09-29.
 
 ## Team tendencies (2026-09-28)
 
