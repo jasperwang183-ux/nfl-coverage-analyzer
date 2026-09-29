@@ -36,7 +36,7 @@ from nfl_coverage.analysis.report import (
     CoverageReport,
     ModelRead,
     StructuralRead,
-    disguise_text,
+    disguise_verdict,
     model_read,
     played_frames,
     played_read,
@@ -524,6 +524,9 @@ def read_tracked(
         calibs[snap_i], frames[snap_i].image.shape[:2], los, offense
     ).warnings
     shown = structural_read(snap, los_c, center_or_off, SHOWN_DEEP, "snap", list(shown_caveats))
+    phases = defender_phases(tracks, los=los_c, center=center_or_off, step=step)
+    hits = [_jsonable(h) for h in mechanism_hits(phases)[HIT_COLUMNS].to_dict("records")]
+    runner = next((int(h["nfl_id"]) for h in hits if h["mechanism"] == "pole_run"), None)
     played: StructuralRead | None = None
     played_caveats: list[str] = []
     if (tracks["rel_frame"] == played_rf).any():
@@ -531,7 +534,7 @@ def read_tracked(
         played_caveats = list(
             check_visibility(calibs[pi], frames[pi].image.shape[:2], los, offense).warnings
         )
-        played = played_read(tracks, los_c, center_or_off, step, played_caveats)
+        played = played_read(tracks, los_c, center_or_off, step, played_caveats, runner=runner)
 
     variant: list[tuple[str, float]] = []
     if bundle is not None and len(snap):
@@ -542,10 +545,8 @@ def read_tracked(
     pre_model, post_model = sequence_reads(
         sequence_bundle, clip, sides, snap_i, offense, step, los=los
     )
-    label = rot["shell_rotation_label"] or ""
-    score = float(rot["shell_rotation_score"])
-    phases = defender_phases(tracks, los=los_c, center=center_or_off, step=step)
-    hits = mechanism_hits(phases)[HIT_COLUMNS]
+    label, text = disguise_verdict(rot["shell_rotation_label"] or "", shown, played, hits)
+    score = 1.0 if label in {h["mechanism"] for h in hits} else float(rot["shell_rotation_score"])
     report = CoverageReport(
         shown=shown,
         played=played,
@@ -553,11 +554,11 @@ def read_tracked(
         variant_confidence=variant_confidence(variant),
         disguise_label=label,
         disguise_score=score,
-        disguise_text=disguise_text(label, shown, played),
+        disguise_text=text,
         caveats=list(clip.caveats) + list(shown_caveats) + played_caveats,
         pre_model=pre_model,
         post_model=post_model,
-        mechanisms=[_jsonable(h) for h in hits.to_dict("records")],
+        mechanisms=hits,
     )
     feats = post_snap_features(tracks, horizon=played_rf).iloc[0]
     features = {k: float(v) for k, v in feats.items() if k.startswith("post_")}
