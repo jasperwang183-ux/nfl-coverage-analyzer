@@ -50,8 +50,8 @@ STILL_SCORE = 1.0  # motion score of a paused / pre-snap still stretch
 MOVING_SCORE = 3.0  # ... and of a play in motion
 PLAY_PEAK = 10.0  # a run peaking below this is a camera move, not the play
 WINDOW_BEFORE = 1.0  # s tracked before the sample where the play starts moving
-# ...and after it: the snap comes within ~0.5 s of the last still frame, and the
-# played read may be taken up to pipeline.PLAYED_MAX_S (5 s) after the snap
+# ...and after it: the snap comes within ~0.5 s of the last still frame, the played read
+# is taken 1.5 s after the snap and the sequence model reads to +3 s
 WINDOW_AFTER = 6.0
 MAX_AUTO_FRAMES = 3  # ~5 s a try; neighbouring still frames fail together, so ask sooner
 SNAP_LABELS = DATA_PROCESSED / "snap_labels.jsonl"
@@ -392,7 +392,6 @@ class RereadRequest(BaseModel):
     los: float | None = None
     offense: str | None = None
     ball_y: float | None = None
-    run_deep: float | None = None
 
 
 # ---------------------------------------------------------------- the app
@@ -619,7 +618,7 @@ def create_app(
         store.advance(clip_id, "calibrated")
         return cal
 
-    def write_outputs(clip_id: str, clip, read, run_deep: float) -> dict:
+    def write_outputs(clip_id: str, clip, read) -> dict:
         from nfl_coverage.analysis.viz import render_play
         from nfl_coverage.vision.overlay import overlay_frames
         from nfl_coverage.vision.pipeline import annotate_snap
@@ -627,12 +626,12 @@ def create_app(
         d = store.dir(clip_id)
         result = read.to_dict()
         cv2.imwrite(str(d / "snap.jpg"), annotate_snap(clip, read))
-        (d / "overlay.json").write_text(json.dumps(overlay_frames(clip, read, run_deep)))
+        (d / "overlay.json").write_text(json.dumps(overlay_frames(clip, read)))
         render_play(
             read.tracks.assign(dataset="clip", coverage_type="?", man_zone="?"),
             str(d / "topdown.png"),
             note="tracked",
-            mark_frame=read.declared_frame,
+            mark_frame=read.played_frame,
         )
         read.tracks.to_parquet(d / "tracks.parquet", index=False)
         (d / "result.json").write_text(json.dumps(result, allow_nan=False))
@@ -642,7 +641,6 @@ def create_app(
     def run_analysis(clip_id: str, req: AnalyzeRequest):
         from nfl_coverage.vision.homography import FieldCalibration
         from nfl_coverage.vision.pipeline import (
-            RUN_DEEP_FILM,
             ReadError,
             TrackedClip,
             carry_calibration,
@@ -699,7 +697,7 @@ def create_app(
             except ReadError as e:
                 store.advance(clip_id, "needs_input", message=str(e), needs=e.needs)
                 return
-            write_outputs(clip_id, clip, read, RUN_DEEP_FILM)
+            write_outputs(clip_id, clip, read)
             store.advance(clip_id, "done")
         except Exception as e:  # noqa: BLE001 - a background thread: surface any failure to the page
             traceback.print_exc()
@@ -747,7 +745,6 @@ def create_app(
     @app.post("/api/clips/{clip_id}/reread")
     def reread(clip_id: str, req: RereadRequest):
         from nfl_coverage.vision.pipeline import (
-            RUN_DEEP_FILM,
             ReadError,
             TrackedClip,
             read_tracked,
@@ -768,13 +765,12 @@ def create_app(
                 req.los,
                 req.offense,
                 req.ball_y,
-                req.run_deep or RUN_DEEP_FILM,
                 bundle(),
                 sequence_bundle(),
             )
         except ReadError as e:
             raise HTTPException(422, str(e)) from e
-        result = write_outputs(clip_id, clip, read, req.run_deep or RUN_DEEP_FILM)
+        result = write_outputs(clip_id, clip, read)
         store.advance(clip_id, "done", overrides=req.model_dump())
         if req.snap_t is not None:
             log_snap_label(store.meta(clip_id), read)

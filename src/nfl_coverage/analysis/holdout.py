@@ -12,8 +12,8 @@ Checks (each returns a flat dict of metrics, so two runs diff cleanly):
              on clean positions and with film-like noise (jitter, missed bodies, a
              mislabeled jersey, an official the striped-shirt check missed).
   shell      the tracking-data shell reader's played MOF state vs the label.
-  film_read  the film path's played read (`declared_frame` + `structural_read` at
-             the film deep threshold) vs the label's MOF state, on a play sample.
+  film_read  the film path's played read (`report.played_read`: the middle early, the
+             deep count later) vs the label's MOF state, on a play sample.
   variant    the snap-only variant model retrained without the holdout weeks.
   disguise   precision / recall against the hand labels, when there are any.
 """
@@ -26,7 +26,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from nfl_coverage.analysis.disguise import RUN_FRAME, declared_frame, shell_rotation
+from nfl_coverage.analysis.disguise import shell_rotation
 from nfl_coverage.analysis.harness import (
     DEEP_COUNT_BY_COVERAGE,
     MOF_CLOSED_BY_COVERAGE,
@@ -34,7 +34,7 @@ from nfl_coverage.analysis.harness import (
     load_labels,
     run_shell_accuracy,
 )
-from nfl_coverage.analysis.report import structural_read
+from nfl_coverage.analysis.report import COUNT_READ, MOF_READ, StructuralRead, played_read
 from nfl_coverage.analysis.shell import _formation_center
 from nfl_coverage.config import DATA_PROCESSED, FIELD_LENGTH
 from nfl_coverage.features.alignment import KEYS, _los_estimate
@@ -47,9 +47,8 @@ FEATURES_PATH = DATA_PROCESSED / "features.parquet"
 HOLDOUT = {"bdb2021": [14, 15, 16, 17], "bdb2026": [14, 15, 16, 17, 18]}
 
 MIN_CLASS = 100  # the variant model drops rarer classes (PREVENT), as train_still_model does
-FILM_RUN_DEEP = 12.0  # pipeline.RUN_DEEP_FILM (not imported: keeps cv2 out of this module)
 # The page's play window ends ~4 s after the snap (suggested frame -1 s / +4.5 s); tracking
-# plays run to the whistle, and `declared_frame` would pick a late frame film never sees.
+# plays run to the whistle, so a play is cut to what film would see.
 FILM_WINDOW_FRAMES = 40
 
 
@@ -156,23 +155,18 @@ def shell_mof(frames: pd.DataFrame) -> dict:
 
 @dataclass(frozen=True)
 class FilmReadRule:
-    """How the film path picks and reads the played frame."""
+    """When and at what depth the film path reads the played middle and the deep count."""
 
-    run_deep: float = FILM_RUN_DEEP
-    frame_rule: str = "declared"  # 'declared': most deep defenders; 'fixed': RUN_FRAME
-    declare_max: int = FILM_WINDOW_FRAMES  # last rel_frame 'declared' may pick
+    mof_read: tuple[float, float] = MOF_READ
+    count_read: tuple[float, float] = COUNT_READ
 
     @property
     def name(self) -> str:
-        if self.frame_rule == "fixed":
-            return f"fixed@{RUN_FRAME / 10:.1f}s/{self.run_deep:g}yd"
-        return f"declared<={self.declare_max / 10:.1f}s/{self.run_deep:g}yd"
+        (mt, md), (ct, cd) = self.mof_read, self.count_read
+        return f"mof@{mt:.1f}s/{md:g}yd count@{ct:.1f}s/{cd:g}yd"
 
-    def played_frame(self, play: pd.DataFrame, los: float, center: float) -> int:
-        if self.frame_rule == "fixed":
-            return min(RUN_FRAME, int(play["rel_frame"].max()))
-        capped = play[play["rel_frame"] <= self.declare_max]
-        return declared_frame(capped, RUN_FRAME, self.run_deep, center=center, los=los)
+    def read(self, play: pd.DataFrame, los: float, center: float) -> StructuralRead:
+        return played_read(play, los, center, 0.1, [], self.mof_read, self.count_read)
 
 
 def film_read_eval(
@@ -184,9 +178,8 @@ def film_read_eval(
 ) -> dict[str, dict]:
     """The film path's played read vs the labels, per rule, on one seeded play sample.
 
-    Same calls `pipeline.read_tracked` makes after tracking: a played frame, then
-    `structural_read` there, on frames up to `window` after the snap (what a page
-    window shows). Scored two ways: the MOF state (Cover 1/3 closed, 2/4/6 open)
+    Same call `pipeline.read_tracked` makes after tracking (`played_read`), on
+    frames up to `window` after the snap (what a page window shows). Scored two ways: the MOF state (Cover 1/3 closed, 2/4/6 open)
     and the deep count (Cover 1 = 1 ... Cover 4 = 4). Per play (slow), so a
     seeded sample; the n is reported so a small change is not over-read.
     """
@@ -212,15 +205,14 @@ def film_read_eval(
             continue
         for r in rules:
             try:
-                rf = r.played_frame(play, los, center)
-                read = structural_read(
-                    play[play["rel_frame"] == rf], los, center, r.run_deep, "played", [], rf
-                )
+                read = r.read(play, los, center)
             except (ValueError, IndexError, KeyError):
                 errors[r.name] += 1
                 continue
             deep_hit = None if truth_deep is None else read.n_deep == truth_deep
-            rows[r.name].append((read.mof_closed == truth_mof, deep_hit, read.confidence))
+            # every scored label puts someone deep, so a 0-high read is wrong, not 'open'
+            mof_hit = read.n_deep > 0 and read.mof_closed == truth_mof
+            rows[r.name].append((mof_hit, deep_hit, read.confidence))
     out = {}
     for name, rs in rows.items():
         mof = pd.Series([h for h, _, _ in rs], dtype=float)

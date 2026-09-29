@@ -29,7 +29,6 @@ from nfl_coverage.analysis.viz import render_play
 from nfl_coverage.config import MODELS_DIR, ROOT
 from nfl_coverage.vision.homography import FieldCalibration
 from nfl_coverage.vision.pipeline import (
-    RUN_DEEP_FILM,
     ReadError,
     TrackedClip,
     annotate_snap,
@@ -56,9 +55,6 @@ def main() -> None:
     ap.add_argument("--offense", choices=["left", "right"], default=None, help="inferred if absent")
     ap.add_argument("--ball-y", type=float, default=None, help="ball field y; inferred if absent")
     ap.add_argument("--step", type=float, default=0.1)
-    ap.add_argument(
-        "--run-deep", type=float, default=RUN_DEEP_FILM, help="post-snap deep threshold (yd)"
-    )
     ap.add_argument("--model", type=Path, default=MODELS_DIR / "still_shown.joblib")
     ap.add_argument("--yolo", default="yolo11s.pt")
     ap.add_argument("--conf", type=float, default=0.3)
@@ -102,9 +98,7 @@ def main() -> None:
 
         bundle = load_bundle(args.model)
     try:
-        read = read_tracked(
-            clip, args.snap, args.los, args.offense, args.ball_y, args.run_deep, bundle
-        )
+        read = read_tracked(clip, args.snap, args.los, args.offense, args.ball_y, bundle=bundle)
     except ReadError as e:
         raise SystemExit(str(e)) from e
 
@@ -146,8 +140,8 @@ def main() -> None:
     )
     rot = read.rotation
     print(
-        f"\nplayed shell declares at rel_frame {read.declared_frame} "
-        f"(+{read.declared_frame * clip.step:.1f} s)"
+        f"\nplayed shell read at rel_frame {read.played_frame} "
+        f"(+{read.played_frame * clip.step:.1f} s, deep line {read.run_deep:.1f} yd)"
     )
     print(
         f"shell_rotation: {rot['shown_shell']} -> {rot['run_shell']}: "
@@ -166,7 +160,7 @@ def main() -> None:
         tracks.assign(dataset="clip", coverage_type="?", man_zone="?"),
         str(png),
         note="tracked",
-        mark_frame=read.declared_frame,
+        mark_frame=read.played_frame,
     )
     cv2.imwrite(str(out_dir / "snap_annotated.jpg"), annotate_snap(clip, read))
     (out_dir / "result.json").write_text(json.dumps(d, indent=2, allow_nan=False))
