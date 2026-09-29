@@ -11,7 +11,12 @@ import pandas as pd
 
 from nfl_coverage.config import BDB2021, BDB2026
 from nfl_coverage.data.nflverse import load_coverage_labels
-from nfl_coverage.data.standardize import add_rel_frame, finalize, flip_left_plays
+from nfl_coverage.data.standardize import (
+    add_rel_frame,
+    finalize,
+    flip_left_plays,
+    majority_event_frame,
+)
 
 # ---------------------------------------------------------------- BDB 2026
 
@@ -52,6 +57,16 @@ _BDB2021_RENAMES = {
 }
 
 
+def bdb2021_snap_frames(tracking: pd.DataFrame) -> pd.DataFrame:
+    """Snap frame per play (game_id, play_id, snap_frame) from renamed BDB 2021 tracking.
+
+    The `ball_snap` frame most rows agree on (football row included), not the first one:
+    a frame-shifted player's stray copy would otherwise put the snap ~9 frames early.
+    Plays without a `ball_snap` are absent (the loader drops them).
+    """
+    return majority_event_frame(tracking, ("ball_snap",)).rename(columns={"frame_id": "snap_frame"})
+
+
 def _canonicalize_bdb2021(
     tracking: pd.DataFrame,
     plays: pd.DataFrame,
@@ -64,6 +79,7 @@ def _canonicalize_bdb2021(
     without labels are kept with NaN so unlabeled plays can still feed the vision work).
     """
     df = tracking.rename(columns=_BDB2021_RENAMES)
+    snap_frames = bdb2021_snap_frames(df)  # before dropping the ball: its row votes too
     df = df[df["team"] != "football"].copy()  # ball rows: no nfl_id, no side
 
     # side: map home/away -> club abbr, compare with possessionTeam
@@ -79,14 +95,7 @@ def _canonicalize_bdb2021(
     df["side"] = (club == df["possessionTeam"]).map({True: "Offense", False: "Defense"})
     df = df.drop(columns=["homeTeamAbbr", "visitorTeamAbbr", "possessionTeam", "team"])
 
-    # snap alignment: ball_snap event (frame 11 in practice, but derive per play)
-    snap_frames = (
-        df.loc[df["event"] == "ball_snap"]
-        .groupby(["game_id", "play_id"], as_index=False)["frame_id"]
-        .min()
-        .rename(columns={"frame_id": "snap_frame"})
-    )
-    df = add_rel_frame(df, snap_frames)
+    df = add_rel_frame(df, snap_frames)  # ball_snap: frame 11 in practice, derived per play
     df = flip_left_plays(df, direction_col="play_direction")
 
     label_cols = labels.rename(columns={"gameId": "game_id", "playId": "play_id"})[

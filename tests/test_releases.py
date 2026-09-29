@@ -54,8 +54,8 @@ def test_bdb2021_frame_shifted_player_does_not_move_the_release():
     tracking.loc[stray & tracking["frameId"].eq(3), "event"] = "pass_forward"
 
     out = releases_bdb2021(tracking)
-    # the loader snaps on the first ball_snap (frame 2), so rel_frame counts from there
-    assert out["release_rel_frame"].iloc[0] == 5.0
+    # snap and release both take the frame most rows agree on (4 and 7), not the stray copy
+    assert out["release_rel_frame"].iloc[0] == 3.0
 
 
 def test_bdb2021_no_release_is_nan_and_no_snap_is_dropped():
