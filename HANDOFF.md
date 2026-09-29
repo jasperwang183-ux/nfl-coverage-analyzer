@@ -51,6 +51,17 @@ throw (`features/phases.py`; throw frames in `data/processed/releases.parquet`, 
 - Film check wanted: SF defense in 2023091709 (SF @ LA, wk 2): Q4 7:25 3rd & 21 (single-high
   look, Cover 2 zone, pole run; Warner on the pass), Q1 3:22 and Q2 13:28 (two-high, Cover 2
   zone), Q2 5:33 (single-high, Cover 3: the seam-carrier false alarm).
+- Film checks (2026-09-29), page clips `187dcd12b5d2` and `cc60a0299ff4`:
+  - SF @ LA 2023 wk 2 Q4 7:25 (label Cover 2 zone): tracking fires the pole run (Warner, mugged
+    at 1.9 yd, 4.1 yd/s to 9.4 yd). Film: sequence model's post head says Cover 2 zone 95%,
+    but the tracker follows Warner only to ~0.8 s, then stalls at ~6.5 yd (likely an ID swap
+    in the box traffic), so no mechanism fires. The fix is tracking (re-ID), not the rule.
+  - Chiefs "NKL Tampa 2" (2019, a YouTube breakdown, no tracking labels): needed a crop to
+    the field inset (scratchpad copy; the capture has title bars and a telestrated freeze),
+    the grass-relative paint cutoff, and a given snap (0.43 s). The runner is the nickel
+    (apex, 7 yd deep, 7 yd off) dropping the seam to 15 yd: not a box defender in the middle,
+    so the pole run does not fire. On tracking an apex seam drop is a weak tell (lift 2.0,
+    mixed Cover 1/3/4), so the rule was not widened.
 - The split played read (middle at 1.5 s, count at 2.2 s) is parked on branch
   `split-played-read` (pushed), not merged.
 - Found: 51 cached 2018 plays have their snap ~9 frames early (loader takes the min
