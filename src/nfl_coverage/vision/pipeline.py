@@ -526,7 +526,7 @@ def read_tracked(
     shown = structural_read(snap, los_c, center_or_off, SHOWN_DEEP, "snap", list(shown_caveats))
     phases = defender_phases(tracks, los=los_c, center=center_or_off, step=step)
     hits = [_jsonable(h) for h in mechanism_hits(phases)[HIT_COLUMNS].to_dict("records")]
-    runner = next((int(h["nfl_id"]) for h in hits if h["mechanism"] == "pole_run"), None)
+    coverage_hit = next((h for h in hits if h["kind"] == "coverage"), None)
     played: StructuralRead | None = None
     played_caveats: list[str] = []
     if (tracks["rel_frame"] == played_rf).any():
@@ -534,7 +534,7 @@ def read_tracked(
         played_caveats = list(
             check_visibility(calibs[pi], frames[pi].image.shape[:2], los, offense).warnings
         )
-        played = played_read(tracks, los_c, center_or_off, step, played_caveats, runner=runner)
+        played = played_read(tracks, los_c, center_or_off, step, played_caveats, hit=coverage_hit)
 
     variant: list[tuple[str, float]] = []
     if bundle is not None and len(snap):

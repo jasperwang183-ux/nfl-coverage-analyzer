@@ -210,17 +210,19 @@ def played_read(
     caveats: list[str],
     mof_read: tuple[float, float] = MOF_READ,
     count_read: tuple[float, float] = COUNT_READ,
-    runner: int | None = None,
+    hit: dict | None = None,
 ) -> StructuralRead:
     """The played structure: the middle from the early frame, the deep count from the later one.
 
     When nobody is deep yet at the middle read (a post safety dropping late from a
-    0-high look), the later frame decides the middle too. `runner` is a pole runner's
-    nfl_id: he is in the deep middle but covers the hole, not a deep half, so the
-    structure is read without him and named Tampa 2 when two halves remain.
+    0-high look), the later frame decides the middle too. `hit` is a mechanism hit
+    (`analysis.mechanisms`) that says what a runner in the deep middle is: a pole runner
+    covers the hole, not a half, so the structure is read without him (Tampa 2 when two
+    halves remain); a late post is the single-high safety even short of the count line.
     """
-    if runner is not None:
-        tracks = tracks[tracks["nfl_id"] != runner]
+    kind = hit["mechanism"] if hit else None
+    if kind == "pole_run":
+        tracks = tracks[tracks["nfl_id"] != int(hit["nfl_id"])]
     mf, cf = played_frames(int(tracks["rel_frame"].max()), step, mof_read, count_read)
 
     def at(rf: int, line: float) -> StructuralRead:
@@ -239,14 +241,18 @@ def played_read(
         f"middle at {src.frame}: {mid_reason}",
         *count.reasons[2 if count.n_deep else 1 :],
     ]
+    if kind == "late_post" and n == 0:
+        n, closed = 1, True
+        reasons.append("the box defender who dropped to the deep middle is the post safety")
     family = FAMILY.get((min(n, 4), closed), shell_label(n, closed))
-    if runner is not None:
+    if kind == "pole_run":
         reasons.append("a box defender ran the pole; he is not counted as a deep safety")
         if n == 2 and not closed:
             family = "Tampa 2 (Cover 2 zone, a runner down the middle)"
     return replace(
         count,
         frame=f"{middle.frame} (middle) / {count.frame} (count)",
+        n_deep=n,
         mof_closed=closed,
         shell=shell_label(n, closed),
         family=family,
