@@ -66,7 +66,8 @@ throw (`features/phases.py`; throw frames in `data/processed/releases.parquet`, 
   `split-played-read` (pushed), not merged.
 - Found: 51 cached 2018 plays have their snap ~9 frames early (loader takes the min
   ball_snap; one player's rows are frame-shifted) and game 2018091605 has one play with
-  every row twice. A task to fix the loader was suggested, not started.
+  every row twice. Fixed in a separate session (26addca, PR #2): the snap is the frame most
+  rows agree on.
 
 ## Team tendencies (2026-09-28)
 
