@@ -54,8 +54,12 @@ throw (`features/phases.py`; throw frames in `data/processed/releases.parquet`, 
 - Film checks (2026-09-29), page clips `187dcd12b5d2` and `cc60a0299ff4`:
   - SF @ LA 2023 wk 2 Q4 7:25 (label Cover 2 zone): tracking fires the pole run (Warner, mugged
     at 1.9 yd, 4.1 yd/s to 9.4 yd). Film: sequence model's post head says Cover 2 zone 95%,
-    but the tracker follows Warner only to ~0.8 s, then stalls at ~6.5 yd (likely an ID swap
-    in the box traffic), so no mechanism fires. The fix is tracking (re-ID), not the rule.
+    but no mechanism fired. Not an ID swap (an earlier guess): the film body that seemed to
+    stall was Greenlaw. Warner, crouched 0.9 yd off the ball on film, was cut as a lineman.
+    Fixed in `vision/track.py` (a line-band defender who gains 4 yd within 2.5 s is kept):
+    his film track then matches the truth on 26/26 frames and the pole run fires on film.
+    `vision/identity.py` + `scripts/compare_trackers.py` score film ids against tracking
+    truth; ByteTrack keeps 92% of defender frames, the re-id trackers 82-87%: tracker kept.
   - Chiefs "NKL Tampa 2" (2019, a YouTube breakdown, no tracking labels): needed a crop to
     the field inset (scratchpad copy; the capture has title bars and a telestrated freeze),
     the grass-relative paint cutoff, and a given snap (0.43 s). The runner is the nickel
