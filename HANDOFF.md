@@ -43,9 +43,14 @@ throw (`features/phases.py`; throw frames in `data/processed/releases.parquet`, 
   7.5% -> 42%, Cover 1 39% -> 3%. The rest is Cover 3 seam carriers.
 - late_post: the same run with nobody deep at the snap (a post safety in the box): Cover 1
   or 3 on 8 of 10 tuning plays. 1533 (analyst Cover 1, 0-high look) reads as this.
-- The Disguise card lists hits under "In the first second". It can contradict the old
-  verdict above it (1533: "no disguise, nobody moved 3 yd"): the shell_rotation verdict
-  still needs to be reconciled with the mechanisms.
+- The Disguise card lists hits under "In the first second", and since 66a3f22 its verdict
+  agrees with them: the split played read is merged (middle at 1.5 s / 11 yd, count at the
+  2.0 s landmark / 12 yd), a pole runner is left out of the played structure (Tampa 2 when
+  two halves remain), a late post counts as the single-high safety, and
+  `report.disguise_verdict` ranks a first-second mechanism over a shell rotation over "held".
+  Holdout film_read (once): middle 0.496/0.610 -> 0.774/0.750, count 0.203/0.328 ->
+  0.389/0.363. Open for the user: clip 1's and clip 2's manifest `played_n_deep` (4 and 3,
+  from the analyst's Cover 4 and Cover 3) now fail, because those corners bail after 2.0 s.
 - The earlier `sf-lar` captures (clip 1, 1326, 1529-1533) are from a 2026 Rams-49ers game, not
   2023 wk 2 (user, 2026-09-29), so they have no tracking labels.
 - Film check wanted: SF defense in 2023091709 (SF @ LA, wk 2): Q4 7:25 3rd & 21 (single-high

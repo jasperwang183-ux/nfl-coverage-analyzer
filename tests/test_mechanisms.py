@@ -79,9 +79,8 @@ def test_the_pole_runner_is_not_a_deep_safety_and_the_verdict_leads_with_him():
     play = _play(1, 1, deep_pole, n_frames=21, base=TAMPA)
     phases = defender_phases(play)
     hits = mechanism_hits(phases).to_dict("records")
-    runner = int(hits[0]["nfl_id"])
     as_safety = played_read(play, 49.5, 26.6, 0.1, [])
-    as_runner = played_read(play, 49.5, 26.6, 0.1, [], runner=runner)
+    as_runner = played_read(play, 49.5, 26.6, 0.1, [], hit=hits[0])
     assert (as_safety.n_deep, as_safety.mof_closed) == (3, True)  # reads like Cover 3
     assert (as_runner.n_deep, as_runner.mof_closed) == (2, False)
     assert as_runner.family.startswith("Tampa 2")
@@ -91,3 +90,15 @@ def test_the_pole_runner_is_not_a_deep_safety_and_the_verdict_leads_with_him():
     assert label == "pole_run" and "Tampa 2" in text
     label, text = disguise_verdict("threshold_flicker", shown, as_runner, [])
     assert label == "threshold_flicker" and text.startswith("no disguise")
+
+
+def test_a_late_post_short_of_the_count_line_is_still_the_single_high_safety():
+    from nfl_coverage.analysis.report import played_read
+
+    zero = {**TAMPA, "FS": (57.0, 18.0), "SS": (57.0, 35.0)}
+    play = _play(1, 1, {"MIKE": (60.0, 27.0)}, n_frames=21, base=zero)  # 10.5 yd at +2.0 s
+    hits = mechanism_hits(defender_phases(play)).to_dict("records")
+    assert hits[0]["mechanism"] == "late_post"
+    read = played_read(play, 49.5, 26.6, 0.1, [], hit=hits[0])
+    assert (read.n_deep, read.mof_closed) == (1, True)
+    assert "Cover 1 or Cover 3" in read.family
