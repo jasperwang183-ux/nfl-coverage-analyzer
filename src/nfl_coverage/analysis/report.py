@@ -215,6 +215,7 @@ class CoverageReport:
     caveats: list[str]
     pre_model: ModelRead | None = None  # sequence model, frames up to the snap
     post_model: ModelRead | None = None  # sequence model, the whole play
+    mechanisms: list[dict] = field(default_factory=list)  # analysis.mechanisms hits
 
     def to_dict(self) -> dict:
         return asdict(self)

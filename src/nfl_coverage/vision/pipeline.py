@@ -29,6 +29,7 @@ import numpy as np
 import pandas as pd
 
 from nfl_coverage.analysis.disguise import RUN_FRAME, declared_frame, shell_rotation
+from nfl_coverage.analysis.mechanisms import HIT_COLUMNS, mechanism_hits
 from nfl_coverage.analysis.report import (
     CoverageReport,
     ModelRead,
@@ -41,6 +42,7 @@ from nfl_coverage.analysis.report import (
 from nfl_coverage.config import FIELD_LENGTH, FIELD_WIDTH
 from nfl_coverage.features.alignment import snapshot_features
 from nfl_coverage.features.movement import post_snap_features
+from nfl_coverage.features.phases import defender_phases
 from nfl_coverage.vision.formation import Formation, infer_formation
 from nfl_coverage.vision.homography import FieldCalibration, on_field
 from nfl_coverage.vision.snap import SnapDetection, detect_snap, field_positions
@@ -550,6 +552,8 @@ def read_tracked(
     )
     label = rot["shell_rotation_label"] or ""
     score = float(rot["shell_rotation_score"])
+    phases = defender_phases(tracks, los=los_c, center=center_or_off, step=step)
+    hits = mechanism_hits(phases)[HIT_COLUMNS]
     report = CoverageReport(
         shown=shown,
         played=played,
@@ -561,6 +565,7 @@ def read_tracked(
         caveats=list(clip.caveats) + list(shown_caveats) + played_caveats,
         pre_model=pre_model,
         post_model=post_model,
+        mechanisms=[_jsonable(h) for h in hits.to_dict("records")],
     )
     feats = post_snap_features(tracks, horizon=rf).iloc[0]
     features = {k: float(v) for k, v in feats.items() if k.startswith("post_")}

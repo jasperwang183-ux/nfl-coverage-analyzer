@@ -61,3 +61,12 @@ def test_the_pole_run_fires_on_the_middle_runner_and_not_on_a_hook_drop():
 def test_an_unreadable_play_scores_nan_not_zero():
     comp = mechanism_component(defender_phases(_play(1, 1, POLE, n_frames=10, base=TAMPA)))
     assert np.isnan(comp.iloc[0]["pole_run_score"])
+
+
+def test_a_deep_middle_run_with_nobody_deep_at_the_snap_is_a_late_post():
+    zero = {**TAMPA, "FS": (57.0, 18.0), "SS": (57.0, 35.0)}  # no safety 9 yd deep
+    hits = mechanism_hits(defender_phases(_play(1, 1, {"MIKE": (61.0, 27.0)}, 21, zero)))
+    assert hits["mechanism"].tolist() == ["late_post"]
+    assert "Cover 1 or Cover 3" in hits.iloc[0]["text"]
+    two_high = mechanism_hits(defender_phases(_play(1, 1, POLE, n_frames=21, base=TAMPA)))
+    assert two_high["mechanism"].tolist() == ["pole_run"]
