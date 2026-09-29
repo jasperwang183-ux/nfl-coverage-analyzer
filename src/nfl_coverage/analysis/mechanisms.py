@@ -32,7 +32,8 @@ class Mechanism:
     text: Callable[[pd.Series], str]
 
 
-def _pole_run(p: pd.DataFrame) -> pd.Series:
+def _deep_middle_run(p: pd.DataFrame) -> pd.Series:
+    """A box defender who commits deep and is in the deep middle by the landmark."""
     return (
         (p["role"] == "box")
         & (p["align_depth"] >= LINE_DEPTH)
@@ -42,22 +43,49 @@ def _pole_run(p: pd.DataFrame) -> pd.Series:
     )
 
 
-# Weeks 1-4, 7,627 labeled plays: fires on 6.9%; 53% of hits are Cover 2 zone (base 12%).
-# From a single-high look, Cover 2 zone goes 6% -> 34% and Cover 1 42% -> 4%; the rest is
-# Cover 3 with a hook defender carrying the seam, which moves the same way.
+def _safeties_at_snap(p: pd.DataFrame) -> pd.Series:
+    return (p["role"] == "safety").groupby([p[k] for k in KEYS]).transform("sum")
+
+
+def _speed(r: pd.Series) -> str:
+    return (
+        f"({r['commit_v_depth']:.1f} yd/s by +1.2 s, "
+        f"{r['landmark_depth']:.0f} yd deep at +{r['landmark_t']:.1f} s)"
+    )
+
+
+# The same run means two things. With a safety already deep it splits the safeties:
+# Tampa 2's pole runner, or a Cover 3 hook defender carrying the seam. With nobody deep
+# at the snap it becomes the only deep defender: a post safety hidden in the box.
+# Weeks 1-4 (7,630 labeled plays), with a safety deep at the snap: from a single-high look
+# Cover 2 zone 6% -> 34% and Cover 1 42% -> 4%, from two-high Cover 2 zone 13% -> 64%.
+# Holdout (scored once): single-high 7.5% -> 42%, Cover 1 39% -> 3%.
 POLE_RUN = Mechanism(
     name="pole_run",
     kind="coverage",
     implies=frozenset({"COVER_2_ZONE"}),
-    fires=_pole_run,
+    fires=lambda p: _deep_middle_run(p) & (_safeties_at_snap(p) > 0),
     text=lambda r: (
-        f"a box defender ran the deep middle ({r['commit_v_depth']:.1f} yd/s by +1.2 s, "
-        f"{r['landmark_depth']:.0f} yd deep at +{r['landmark_t']:.1f} s): Tampa 2's pole "
+        f"a box defender ran the deep middle between the safeties {_speed(r)}: Tampa 2's pole "
         "runner, or a Cover 3 hook defender carrying the seam; not man"
     ),
 )
 
-MECHANISMS: tuple[Mechanism, ...] = (POLE_RUN,)
+# 0-high looks where a box defender ran the deep middle: 10 plays on weeks 1-4, 21 on the
+# holdout, Cover 1 or Cover 3 on 80-88% of them. Too few to fit; the analyst's 1533
+# (0-high look, Cover 1 man) is one.
+LATE_POST = Mechanism(
+    name="late_post",
+    kind="coverage",
+    implies=frozenset({"COVER_1_MAN", "COVER_3_ZONE"}),
+    fires=lambda p: _deep_middle_run(p) & (_safeties_at_snap(p) == 0),
+    text=lambda r: (
+        f"with nobody deep at the snap, a box defender ran to the deep middle {_speed(r)}: "
+        "a post safety hidden in the box, Cover 1 or Cover 3"
+    ),
+)
+
+MECHANISMS: tuple[Mechanism, ...] = (POLE_RUN, LATE_POST)
 
 HIT_COLUMNS = ["mechanism", "kind", "nfl_id", "t", "text"]
 

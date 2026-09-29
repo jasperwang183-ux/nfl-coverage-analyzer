@@ -643,6 +643,7 @@ function renderResult(res) {
   $("disguiseCard").innerHTML = `<h3>Disguise</h3>
     <div class="verdict">${esc(rep.shown.shell)}<span class="arrow">→</span>${esc(rep.played ? rep.played.shell : "?")}</div>
     <div>${esc(rep.disguise_text)}</div>
+    ${(rep.mechanisms || []).length ? `<div class="note"><b>In the first second</b><ul>${rep.mechanisms.map((m) => `<li>${esc(m.text)}</li>`).join("")}</ul></div>` : ""}
     ${tendencySection()}
     ${caveats.length ? `<div class="note"><b>Caveats</b><ul>${caveats.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}
     ${res.warnings.length ? `<div class="note"><b>Your values disagree with the formation read</b><ul>${res.warnings.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}`;
