@@ -55,6 +55,9 @@ def grass_mask(image: np.ndarray) -> np.ndarray:
 
 PAINT_TOPHAT = 40  # paint is this much brighter (V) than its 31-px neighborhood
 PAINT_SAT_MAX = 70  # white paint in shade picks up the sky's blue; saturated overlays do not pass
+# ...but a color-boosted capture (a YouTube breakdown at grass saturation ~185) tints the
+# paint green to saturation ~100: paint only has to be well below its own turf
+PAINT_SAT_OF_GRASS = 0.65
 PAINT_NEAR_GRASS = 15  # px: paint lies on turf, player UI and letterbox text do not
 
 
@@ -73,10 +76,12 @@ def paint_mask(image: np.ndarray, roi: tuple[int, int, int, int] | None = None) 
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31))
     tophat = cv2.morphologyEx(hsv[..., 2], cv2.MORPH_TOPHAT, kernel)
+    grass = grass_mask(image)
+    grass_sat = float(np.median(hsv[..., 1][grass > 0])) if (grass > 0).any() else 0.0
+    sat_max = max(PAINT_SAT_MAX, PAINT_SAT_OF_GRASS * grass_sat)
     # locally bright (paint in shade) or plainly bright (a sideline band wider than
     # the top-hat kernel); the field bounds below keep UI text out either way
-    bright = ((tophat > PAINT_TOPHAT) | (hsv[..., 2] > 170)) & (hsv[..., 1] < PAINT_SAT_MAX)
-    grass = grass_mask(image)
+    bright = ((tophat > PAINT_TOPHAT) | (hsv[..., 2] > 170)) & (hsv[..., 1] < sat_max)
     field = cv2.morphologyEx(
         grass, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT, (61, 61))
     )

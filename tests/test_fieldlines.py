@@ -261,3 +261,13 @@ def test_a_reanchor_corrects_along_the_field_and_keeps_the_depth():
     p = np.float32([[800, 450], [300, 700]])
     assert np.allclose(fixed.to_field(p)[:, 0], truth.to_field(p)[:, 0], atol=0.05)
     assert np.allclose(fixed.to_field(p)[:, 1], drifted.to_field(p)[:, 1], atol=1e-3)
+
+
+def test_paint_on_color_boosted_turf_is_still_paint():
+    hsv = np.zeros((200, 400, 3), np.uint8)
+    hsv[...] = (43, 185, 140)  # saturated grass, as in a color-boosted YouTube capture
+    hsv[:, 195:205] = (42, 100, 225)  # a yard line tinted green by the capture
+    hsv[20:40, 50:90] = (0, 220, 230)  # a telestrator's red mark
+    mask = paint_mask(cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR))
+    assert mask[100, 200] > 0
+    assert mask[30, 70] == 0
