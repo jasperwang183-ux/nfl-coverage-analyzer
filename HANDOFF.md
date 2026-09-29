@@ -46,6 +46,8 @@ throw (`features/phases.py`; throw frames in `data/processed/releases.parquet`, 
 - The Disguise card lists hits under "In the first second". It can contradict the old
   verdict above it (1533: "no disguise, nobody moved 3 yd"): the shell_rotation verdict
   still needs to be reconciled with the mechanisms.
+- The earlier `sf-lar` captures (clip 1, 1326, 1529-1533) are from a 2026 Rams-49ers game, not
+  2023 wk 2 (user, 2026-09-29), so they have no tracking labels.
 - Film check wanted: SF defense in 2023091709 (SF @ LA, wk 2): Q4 7:25 3rd & 21 (single-high
   look, Cover 2 zone, pole run; Warner on the pass), Q1 3:22 and Q2 13:28 (two-high, Cover 2
   zone), Q2 5:33 (single-high, Cover 3: the seam-carrier false alarm).
