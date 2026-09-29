@@ -49,8 +49,9 @@ throw (`features/phases.py`; throw frames in `data/processed/releases.parquet`, 
   two halves remain), a late post counts as the single-high safety, and
   `report.disguise_verdict` ranks a first-second mechanism over a shell rotation over "held".
   Holdout film_read (once): middle 0.496/0.610 -> 0.774/0.750, count 0.203/0.328 ->
-  0.389/0.363. Open for the user: clip 1's and clip 2's manifest `played_n_deep` (4 and 3,
-  from the analyst's Cover 4 and Cover 3) now fail, because those corners bail after 2.0 s.
+  0.389/0.363. Clip 1's and clip 2's manifest expectations were cut to the played middle
+  only (user, 2026-09-29): their deep counts (4 and 3) were the family's, and those corners
+  bail after the 2.0 s count.
 - The earlier `sf-lar` captures (clip 1, 1326, 1529-1533) are from a 2026 Rams-49ers game, not
   2023 wk 2 (user, 2026-09-29), so they have no tracking labels.
 - Film check wanted: SF defense in 2023091709 (SF @ LA, wk 2): Q4 7:25 3rd & 21 (single-high
