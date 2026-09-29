@@ -138,39 +138,6 @@ def shell_rotation(
     return out.reset_index()
 
 
-def declared_frame(
-    frames: pd.DataFrame,
-    run_frame: int = RUN_FRAME,
-    deep_depth: float = RUN_DEEP_DEPTH,
-    min_defenders: int = 5,
-    center: float | None = None,
-    los: float | None = None,
-    max_frame: int | None = None,
-) -> int:
-    """The rel_frame at which the played shell has declared: most deep defenders.
-
-    Coverage responsibilities appear over a window, not at an instant — a corner
-    bailing to a third crosses the deep line later than a safety who was already
-    there. Among frames from `run_frame` to the end that still carry at least
-    `min_defenders` tracked defenders (tracks get lost as the camera zooms),
-    take the one with the most defenders past `deep_depth`; ties go to the
-    earliest; none past `max_frame`. Film reads use this; the tracking-data
-    harness keeps the fixed 2.0 s read it was calibrated on.
-    """
-    last = int(frames["rel_frame"].max())
-    if max_frame is not None:
-        last = min(last, max_frame)
-    best_rf, best_n = run_frame, -1
-    for rf in range(min(run_frame, last), last + 1):
-        d = deep_defenders(frames, rf, deep_depth=deep_depth, center=center, los=los)
-        if len(d) < min_defenders:
-            continue
-        n = int(d["deep"].sum())
-        if n > best_n:
-            best_rf, best_n = rf, n
-    return best_rf
-
-
 def shell_change_label(
     shown_n_deep: int, shown_mof_closed: bool, run_n_deep: int, run_mof_closed: bool
 ) -> tuple[str, float]:

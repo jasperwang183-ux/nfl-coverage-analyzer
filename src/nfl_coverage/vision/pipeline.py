@@ -28,14 +28,18 @@ import cv2
 import numpy as np
 import pandas as pd
 
-from nfl_coverage.analysis.disguise import RUN_FRAME, declared_frame, shell_rotation
+from nfl_coverage.analysis.disguise import shell_rotation
 from nfl_coverage.analysis.mechanisms import HIT_COLUMNS, mechanism_hits
 from nfl_coverage.analysis.report import (
+    COUNT_READ,
+    MOF_READ,
     CoverageReport,
     ModelRead,
     StructuralRead,
     disguise_text,
     model_read,
+    played_frames,
+    played_read,
     structural_read,
     variant_confidence,
 )
@@ -60,8 +64,6 @@ from nfl_coverage.vision.track import (
 from nfl_coverage.vision.visibility import check_visibility
 
 SHOWN_DEEP = 9.0  # yd: deep at the snap (the tracking-data threshold)
-RUN_DEEP_FILM = 12.0  # yd: deep in the played read on film (see HANDOFF: under review)
-PLAYED_MAX_S = 5.0  # s after the snap: the latest frame the played read may be taken at
 JPEG_QUALITY = 92
 
 
@@ -344,7 +346,8 @@ class ClipRead:
     sides: SideAssignment
     bodies: SnapBodies
     tracks: pd.DataFrame
-    declared_frame: int
+    played_frame: int  # rel_frame of the played read's deep count (the middle is read earlier)
+    run_deep: float  # the deep line (yd) of that count
     rotation: dict
     report: CoverageReport
     features: dict[str, float]
@@ -385,8 +388,9 @@ class ClipRead:
                 "non_players": self.sides.n_referee,
             },
             "played_frame": {
-                "rel_frame": self.declared_frame,
-                "t": self.snap_t + self.declared_frame * self.step,
+                "rel_frame": self.played_frame,
+                "t": self.snap_t + self.played_frame * self.step,
+                "deep_line": self.run_deep,
             },
             "rotation": _jsonable(self.rotation),
             "report": _jsonable(self.report.to_dict()),
@@ -451,7 +455,6 @@ def read_tracked(
     los: float | None = None,
     offense: str | None = None,
     ball_y: float | None = None,
-    run_deep: float = RUN_DEEP_FILM,
     bundle: dict | None = None,
     sequence_bundle=None,
 ) -> ClipRead:
@@ -507,11 +510,10 @@ def read_tracked(
     tracks = canonical_tracks(frames, calibs, sides, snap_i, offense, step, los=los)
     los_c, center = _canonical(offense, los, ball_y)
 
-    declared = declared_frame(
-        tracks, RUN_FRAME, run_deep, center=center, los=los_c, max_frame=round(PLAYED_MAX_S / step)
-    )
+    mof_rf, played_rf = played_frames(int(tracks["rel_frame"].max()), step)
+    # the disguise component compares the middle at the snap with the middle once it is read
     rot = shell_rotation(
-        tracks, run_frame=declared, run_deep_depth=run_deep, center=center, los=los_c
+        tracks, run_frame=mof_rf, run_deep_depth=MOF_READ[1], center=center, los=los_c
     ).iloc[0]
     snap = tracks[tracks["rel_frame"] == 0]
     center_or_off = (
@@ -522,24 +524,14 @@ def read_tracked(
         calibs[snap_i], frames[snap_i].image.shape[:2], los, offense
     ).warnings
     shown = structural_read(snap, los_c, center_or_off, SHOWN_DEEP, "snap", list(shown_caveats))
-    rf = int(rot["run_frame"])
-    later = tracks[tracks["rel_frame"] == rf]
     played: StructuralRead | None = None
     played_caveats: list[str] = []
-    if len(later):
-        pi = min(max(snap_i + rf, 0), len(frames) - 1)
+    if (tracks["rel_frame"] == played_rf).any():
+        pi = min(max(snap_i + played_rf, 0), len(frames) - 1)
         played_caveats = list(
             check_visibility(calibs[pi], frames[pi].image.shape[:2], los, offense).warnings
         )
-        played = structural_read(
-            later,
-            los_c,
-            center_or_off,
-            run_deep,
-            f"+{rf * step:.1f} s",
-            played_caveats,
-            rel_frame=rf,
-        )
+        played = played_read(tracks, los_c, center_or_off, step, played_caveats)
 
     variant: list[tuple[str, float]] = []
     if bundle is not None and len(snap):
@@ -567,7 +559,7 @@ def read_tracked(
         post_model=post_model,
         mechanisms=[_jsonable(h) for h in hits.to_dict("records")],
     )
-    feats = post_snap_features(tracks, horizon=rf).iloc[0]
+    feats = post_snap_features(tracks, horizon=played_rf).iloc[0]
     features = {k: float(v) for k, v in feats.items() if k.startswith("post_")}
     rotation = {
         k: _jsonable(v) for k, v in rot.to_dict().items() if not isinstance(v, (list, dict))
@@ -586,7 +578,8 @@ def read_tracked(
         sides=sides,
         bodies=bodies,
         tracks=tracks,
-        declared_frame=int(declared),
+        played_frame=int(played_rf),
+        run_deep=COUNT_READ[1],
         rotation=rotation,
         report=report,
         features=features,
