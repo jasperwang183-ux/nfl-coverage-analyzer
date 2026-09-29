@@ -36,11 +36,13 @@ CORNER_DEEP_DEPTH = 12.0  # the widest defender per side must be this deep to co
 
 # The played structure is read at two times (s after the snap, deep line yd). The middle is
 # read once rotations are done but before routes pull man defenders deep (after ~2 s a
-# corner carrying a go route reads as a second safety); the deep count once quarters and
-# Cover 3 corners have bailed. Tuning weeks, 2,400 plays: middle 0.768, count 0.406, vs
-# 0.559 / 0.290 for the most-deep frame in 2-4 s it replaced.
+# corner carrying a go route reads as a second safety); the deep count at the landmark
+# (features.phases), once quarters and Cover 3 corners have mostly bailed. Tuning weeks,
+# 2,400 plays: middle 0.768, count 0.392 at 2.0 s (0.406 at 2.2 s, inside noise, but film
+# has no throw frame and defenders break on a quick throw by 2.2 s), vs 0.559 / 0.290 for
+# the most-deep frame in 2-4 s it replaced.
 MOF_READ = (1.5, 11.0)
-COUNT_READ = (2.2, 12.0)
+COUNT_READ = (2.0, 12.0)
 LEVELS = ["low", "medium", "high"]
 
 FAMILY = {
@@ -208,12 +210,17 @@ def played_read(
     caveats: list[str],
     mof_read: tuple[float, float] = MOF_READ,
     count_read: tuple[float, float] = COUNT_READ,
+    runner: int | None = None,
 ) -> StructuralRead:
     """The played structure: the middle from the early frame, the deep count from the later one.
 
     When nobody is deep yet at the middle read (a post safety dropping late from a
-    0-high look), the later frame decides the middle too.
+    0-high look), the later frame decides the middle too. `runner` is a pole runner's
+    nfl_id: he is in the deep middle but covers the hole, not a deep half, so the
+    structure is read without him and named Tampa 2 when two halves remain.
     """
+    if runner is not None:
+        tracks = tracks[tracks["nfl_id"] != runner]
     mf, cf = played_frames(int(tracks["rel_frame"].max()), step, mof_read, count_read)
 
     def at(rf: int, line: float) -> StructuralRead:
@@ -232,12 +239,17 @@ def played_read(
         f"middle at {src.frame}: {mid_reason}",
         *count.reasons[2 if count.n_deep else 1 :],
     ]
+    family = FAMILY.get((min(n, 4), closed), shell_label(n, closed))
+    if runner is not None:
+        reasons.append("a box defender ran the pole; he is not counted as a deep safety")
+        if n == 2 and not closed:
+            family = "Tampa 2 (Cover 2 zone, a runner down the middle)"
     return replace(
         count,
         frame=f"{middle.frame} (middle) / {count.frame} (count)",
         mof_closed=closed,
         shell=shell_label(n, closed),
-        family=FAMILY.get((min(n, 4), closed), shell_label(n, closed)),
+        family=family,
         mof_margin=src.mof_margin,
         confidence=worse.confidence,
         confidence_why=why,
@@ -305,6 +317,25 @@ class CoverageReport:
         for c in self.caveats:
             lines.append(f"    ! {c}")
         return "\n".join(lines)
+
+
+def disguise_verdict(
+    rotation_label: str,
+    shown: StructuralRead,
+    played: StructuralRead | None,
+    hits: list[dict],
+) -> tuple[str, str]:
+    """One disguise call for the card: (label, text), from the strongest evidence.
+
+    A coverage mechanism seen in the first second leads (it is the disguise itself);
+    otherwise a shell rotation between the snap and the middle read; otherwise the
+    look held. The rotation labels come from `disguise.shell_rotation`.
+    """
+    coverage = [h for h in hits if h.get("kind") == "coverage"]
+    if coverage and played is not None:
+        h = coverage[0]
+        return h["mechanism"], (f"{h['text']} (showed {shown.family}, played {played.family})")
+    return rotation_label, disguise_text(rotation_label, shown, played)
 
 
 def disguise_text(label: str, shown: StructuralRead, played: StructuralRead | None) -> str:

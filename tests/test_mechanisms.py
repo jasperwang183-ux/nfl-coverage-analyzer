@@ -70,3 +70,24 @@ def test_a_deep_middle_run_with_nobody_deep_at_the_snap_is_a_late_post():
     assert "Cover 1 or Cover 3" in hits.iloc[0]["text"]
     two_high = mechanism_hits(defender_phases(_play(1, 1, POLE, n_frames=21, base=TAMPA)))
     assert two_high["mechanism"].tolist() == ["pole_run"]
+
+
+def test_the_pole_runner_is_not_a_deep_safety_and_the_verdict_leads_with_him():
+    from nfl_coverage.analysis.report import disguise_verdict, played_read, structural_read
+
+    deep_pole = {**POLE, "MIKE": (63.0, 27.0)}  # 13.5 yd deep at +2.0 s, past the count line
+    play = _play(1, 1, deep_pole, n_frames=21, base=TAMPA)
+    phases = defender_phases(play)
+    hits = mechanism_hits(phases).to_dict("records")
+    runner = int(hits[0]["nfl_id"])
+    as_safety = played_read(play, 49.5, 26.6, 0.1, [])
+    as_runner = played_read(play, 49.5, 26.6, 0.1, [], runner=runner)
+    assert (as_safety.n_deep, as_safety.mof_closed) == (3, True)  # reads like Cover 3
+    assert (as_runner.n_deep, as_runner.mof_closed) == (2, False)
+    assert as_runner.family.startswith("Tampa 2")
+
+    shown = structural_read(play[play["rel_frame"] == 0], 49.5, 26.6, 9.0, "snap", [])
+    label, text = disguise_verdict("rotate_to_mof_closed", shown, as_runner, hits)
+    assert label == "pole_run" and "Tampa 2" in text
+    label, text = disguise_verdict("threshold_flicker", shown, as_runner, [])
+    assert label == "threshold_flicker" and text.startswith("no disguise")
