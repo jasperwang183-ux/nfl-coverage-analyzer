@@ -26,6 +26,35 @@ stays as recorded; never re-score), `tendency_plays.parquet` / `tendencies.parqu
 1-13: 39 of the plays), `disguise_scores.parquet`, `models/still_shown.joblib`, and any
 `verify.py bdb` numbers from before 2026-09-29.
 
+## Disguise as a mechanism in the first second (2026-09-29)
+
+Plan: `C:/Users/jaspe/.claude/plans/i-think-i-want-parsed-dahl.md` (user-approved). A
+disguise is read as movement per defender, not a snap-vs-late shell diff: alignment at
+the snap (`analysis/roles.py`, geometry only, so film works; mike = an ILB/MLB/LB 93-94%),
+trigger velocity over +0.3-0.7 and +0.7-1.2 s, landmark at the earlier of +2.0 s and the
+throw (`features/phases.py`; throw frames in `data/processed/releases.parquet`, built by
+`scripts/build_releases.py`: 18% of passes are out before 2.0 s). Mechanisms are rows in
+`analysis/mechanisms.py`; `scripts/check_mechanisms.py` prints lift by the shown look.
+
+- pole_run: a box defender commits deep (>= 1.5 yd/s by +1.2 s) and is >= 9 yd deep in the
+  middle at the landmark, with a safety deep at the snap. The user's 4.5 yd/s and 13 yd
+  fire on almost no Cover 2 zone play; orientation (`o`) showed no usable pattern.
+  Holdout, scored once: lift 3.8 for Cover 2 zone; from a single-high look Cover 2 zone
+  7.5% -> 42%, Cover 1 39% -> 3%. The rest is Cover 3 seam carriers.
+- late_post: the same run with nobody deep at the snap (a post safety in the box): Cover 1
+  or 3 on 8 of 10 tuning plays. 1533 (analyst Cover 1, 0-high look) reads as this.
+- The Disguise card lists hits under "In the first second". It can contradict the old
+  verdict above it (1533: "no disguise, nobody moved 3 yd"): the shell_rotation verdict
+  still needs to be reconciled with the mechanisms.
+- Film check wanted: SF defense in 2023091709 (SF @ LA, wk 2): Q4 7:25 3rd & 21 (single-high
+  look, Cover 2 zone, pole run; Warner on the pass), Q1 3:22 and Q2 13:28 (two-high, Cover 2
+  zone), Q2 5:33 (single-high, Cover 3: the seam-carrier false alarm).
+- The split played read (middle at 1.5 s, count at 2.2 s) is parked on branch
+  `split-played-read` (pushed), not merged.
+- Found: 51 cached 2018 plays have their snap ~9 frames early (loader takes the min
+  ball_snap; one player's rows are frame-shifted) and game 2018091605 has one play with
+  every row twice. A task to fix the loader was suggested, not started.
+
 ## Team tendencies (2026-09-28)
 
 Roadmap 10 built. `analysis/tendencies.py`, `scripts/build_tendencies.py` (reads every
