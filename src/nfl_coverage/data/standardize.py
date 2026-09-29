@@ -67,6 +67,24 @@ def add_rel_frame(df: pd.DataFrame, snap_frames: pd.DataFrame) -> pd.DataFrame:
     return out.drop(columns=["snap_frame"])
 
 
+def majority_event_frame(df: pd.DataFrame, events: tuple[str, ...]) -> pd.DataFrame:
+    """The frame of `events` most rows of each play agree on (earliest on a tie).
+
+    Events are tagged per row. In BDB 2021, ~60 plays have one player whose rows are
+    frame-shifted and carry a stray copy of every event (e.g. ball_snap at frame 2 while
+    every other row has it at 11), so the first tagged frame is not the event's frame.
+    Returns game_id, play_id, frame_id; plays without any of `events` are absent.
+    """
+    keys = ["game_id", "play_id"]
+    counts = (
+        df.loc[df["event"].isin(events)]
+        .groupby([*keys, "frame_id"], as_index=False)
+        .size()
+        .sort_values([*keys, "size", "frame_id"], ascending=[True, True, False, True])
+    )
+    return counts.drop_duplicates(keys)[[*keys, "frame_id"]].reset_index(drop=True)
+
+
 def finalize(df: pd.DataFrame, dataset: str) -> pd.DataFrame:
     """Tag with the dataset name, order canonical columns, and sort."""
     df = df.copy()

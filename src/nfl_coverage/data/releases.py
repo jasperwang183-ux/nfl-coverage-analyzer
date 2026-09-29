@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from nfl_coverage.data.loaders import _BDB2021_RENAMES
-from nfl_coverage.data.standardize import add_rel_frame
+from nfl_coverage.data.loaders import _BDB2021_RENAMES, bdb2021_snap_frames
+from nfl_coverage.data.standardize import add_rel_frame, majority_event_frame
 
 RELEASE_COLUMNS = ["dataset", "game_id", "play_id", "release_rel_frame"]
 
@@ -22,37 +22,16 @@ BDB2021_RELEASE_EVENTS = ("pass_forward", "pass_shovel")
 _KEYS = ["game_id", "play_id"]
 
 
-def _loader_snap_frames(df: pd.DataFrame) -> pd.DataFrame:
-    return (
-        df.loc[df["event"] == "ball_snap"]
-        .groupby(_KEYS, as_index=False)["frame_id"]
-        .min()
-        .rename(columns={"frame_id": "snap_frame"})
-    )
-
-
-def _majority_event_frame(df: pd.DataFrame, events: tuple[str, ...]) -> pd.DataFrame:
-    # Events are tagged per row; on ~60 plays one player's rows are frame-shifted and carry a
-    # stray copy of every event (e.g. pass_forward at frame 3 and 30), so take the frame most
-    # rows agree on (earliest on a tie) rather than the first.
-    counts = (
-        df.loc[df["event"].isin(events)]
-        .groupby([*_KEYS, "frame_id"], as_index=False)
-        .size()
-        .sort_values([*_KEYS, "size", "frame_id"], ascending=[True, True, False, True])
-    )
-    return counts.drop_duplicates(_KEYS)[[*_KEYS, "frame_id"]]
-
-
 def releases_bdb2021(tracking: pd.DataFrame) -> pd.DataFrame:
     """Release frame per play for one raw BDB 2021 week (camelCase, as read from weekN.csv).
 
-    The snap is the loader's (`loaders._canonicalize_bdb2021`: first `ball_snap` frame, plays
-    without one dropped) so `release_rel_frame` lines up with the cached canonical frames.
+    The snap is the loader's (`loaders.bdb2021_snap_frames`, plays without one dropped) so
+    `release_rel_frame` lines up with the cached canonical frames. The release uses the same
+    majority rule (`standardize.majority_event_frame`) against frame-shifted players.
     """
     df = tracking.rename(columns=_BDB2021_RENAMES)
-    snap_frames = _loader_snap_frames(df)
-    release = _majority_event_frame(df, BDB2021_RELEASE_EVENTS)
+    snap_frames = bdb2021_snap_frames(df)
+    release = majority_event_frame(df, BDB2021_RELEASE_EVENTS)
     release = add_rel_frame(release, snap_frames).rename(columns={"rel_frame": "release_rel_frame"})
     out = snap_frames[_KEYS].merge(
         release[_KEYS + ["release_rel_frame"]], on=_KEYS, how="left", validate="1:1"
