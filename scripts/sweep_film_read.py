@@ -24,11 +24,12 @@ from nfl_coverage.analysis.holdout import (
     film_read_eval,
     tuning_weeks,
 )
+from nfl_coverage.analysis.report import COUNT_READ, MOF_READ
 from nfl_coverage.config import ROOT
 from nfl_coverage.features.alignment import KEYS
 
-DEEP = [11.0, 12.0, 13.0, 14.0]
-FRAME_RULES = [("fixed", 20), ("declared", 25), ("declared", 30), ("declared", 40)]
+MOF_READS = [(1.2, 11.0), (1.5, 11.0), (1.5, 12.0), (1.8, 12.0)]
+COUNT_READS = [(2.0, 12.0), (2.2, 12.0), (2.5, 12.0), (2.2, 13.0)]
 
 
 def sample_tuning_plays(dataset: str, per_week: int, seed: int = 0) -> pd.DataFrame:
@@ -46,7 +47,9 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--per-week", type=int, default=50)
     args = ap.parse_args()
-    rules = [FilmReadRule(d, fr, cap) for fr, cap in FRAME_RULES for d in DEEP]
+    rules = [FilmReadRule(m, COUNT_READ) for m in MOF_READS] + [
+        FilmReadRule(MOF_READ, c) for c in COUNT_READS if c != COUNT_READ
+    ]
     results = {}
     for ds in ("bdb2021", "bdb2026"):
         plays = sample_tuning_plays(ds, args.per_week)

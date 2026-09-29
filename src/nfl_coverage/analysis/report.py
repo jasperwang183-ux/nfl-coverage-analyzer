@@ -19,7 +19,7 @@ the object a UI shows under the video.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 
 import numpy as np
 import pandas as pd
@@ -33,6 +33,15 @@ from nfl_coverage.analysis.shell import (
 )
 
 CORNER_DEEP_DEPTH = 12.0  # the widest defender per side must be this deep to count as a deep third
+
+# The played structure is read at two times (s after the snap, deep line yd). The middle is
+# read once rotations are done but before routes pull man defenders deep (after ~2 s a
+# corner carrying a go route reads as a second safety); the deep count once quarters and
+# Cover 3 corners have bailed. Tuning weeks, 2,400 plays: middle 0.768, count 0.406, vs
+# 0.559 / 0.290 for the most-deep frame in 2-4 s it replaced.
+MOF_READ = (1.5, 11.0)
+COUNT_READ = (2.2, 12.0)
+LEVELS = ["low", "medium", "high"]
 
 FAMILY = {
     (0, False): "Cover 0 (no deep help)",
@@ -178,6 +187,61 @@ def structural_read(
         confidence=confidence,
         reasons=reasons,
         confidence_why=confidence_why,
+    )
+
+
+def played_frames(
+    last_rel_frame: int,
+    step: float,
+    mof_read: tuple[float, float] = MOF_READ,
+    count_read: tuple[float, float] = COUNT_READ,
+) -> tuple[int, int]:
+    """The rel_frames of the middle read and the count read, capped at the last tracked one."""
+    return tuple(min(round(t / step), last_rel_frame) for t, _ in (mof_read, count_read))
+
+
+def played_read(
+    tracks: pd.DataFrame,
+    los: float,
+    center: float,
+    step: float,
+    caveats: list[str],
+    mof_read: tuple[float, float] = MOF_READ,
+    count_read: tuple[float, float] = COUNT_READ,
+) -> StructuralRead:
+    """The played structure: the middle from the early frame, the deep count from the later one.
+
+    When nobody is deep yet at the middle read (a post safety dropping late from a
+    0-high look), the later frame decides the middle too.
+    """
+    mf, cf = played_frames(int(tracks["rel_frame"].max()), step, mof_read, count_read)
+
+    def at(rf: int, line: float) -> StructuralRead:
+        frame = tracks[tracks["rel_frame"] == rf]
+        return structural_read(frame, los, center, line, f"+{rf * step:.1f} s", caveats, rf)
+
+    middle, count = at(mf, mof_read[1]), at(cf, count_read[1])
+    src = middle if middle.n_deep else count
+    closed = src.mof_closed
+    n = count.n_deep
+    worse = min(src, count, key=lambda r: LEVELS.index(r.confidence))
+    why = list(dict.fromkeys(src.confidence_why + count.confidence_why))
+    mid_reason = src.reasons[1] if src.n_deep else f"nobody {mof_read[1]:.0f} yd deep"
+    reasons = [
+        f"at {count.frame}: {count.reasons[0]}",
+        f"middle at {src.frame}: {mid_reason}",
+        *count.reasons[2 if count.n_deep else 1 :],
+    ]
+    return replace(
+        count,
+        frame=f"{middle.frame} (middle) / {count.frame} (count)",
+        mof_closed=closed,
+        shell=shell_label(n, closed),
+        family=FAMILY.get((min(n, 4), closed), shell_label(n, closed)),
+        mof_margin=src.mof_margin,
+        confidence=worse.confidence,
+        confidence_why=why,
+        reasons=reasons,
     )
 
 

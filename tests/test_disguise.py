@@ -222,21 +222,3 @@ class TestContext:
         ctx = _context_bdb2026(supp)
         assert ctx.loc[0, "defense"] == "LA" and ctx.loc[0, "defenders_in_box"] == 7
         assert "extra" not in ctx
-
-
-def test_declared_frame_waits_for_the_bailing_corner():
-    from nfl_coverage.analysis.disguise import declared_frame
-
-    # safeties deep from the start; the off corner only reaches 14 yd at frame 24
-    play = _play(1, 1, {"FS": (66.0, 18.0), "SS": (66.0, 35.0), "CB2": (66.0, 46.0)}, n_frames=31)
-    # CB2 is interpolated linearly from 57 -> 66 over 30 frames: crosses 14 yd deep (x=63.5) ~frame 22
-    assert declared_frame(play, run_frame=20, deep_depth=14.0, min_defenders=5) >= 22
-    static = _play(1, 1, HOLD, n_frames=31)
-    assert declared_frame(static, run_frame=20, deep_depth=14.0) == 20
-
-
-def test_declared_frame_stops_at_the_cap():
-    from nfl_coverage.analysis.disguise import declared_frame
-
-    play = _play(1, 1, {"FS": (66.0, 18.0), "SS": (66.0, 35.0), "CB2": (66.0, 46.0)}, n_frames=31)
-    assert declared_frame(play, run_frame=20, deep_depth=14.0, min_defenders=5, max_frame=21) <= 21

@@ -133,13 +133,15 @@ def _late_deep_play() -> pd.DataFrame:
     return df.assign(dataset="bdb2021", game_id=1, play_id=1, position="WR")
 
 
-def test_film_read_rule_frame_choice():
+def test_film_read_rule_reads_the_middle_early_and_the_count_late():
     from nfl_coverage.analysis.holdout import FilmReadRule
 
-    play = _late_deep_play()
-    assert FilmReadRule(12.0, "fixed").played_frame(play, 50.0, 26.0) == 20
-    assert FilmReadRule(12.0, "declared", 25).played_frame(play, 50.0, 26.0) == 20
-    assert FilmReadRule(12.0, "declared", 40).played_frame(play, 50.0, 26.0) == 28
+    # two safeties 14 yd deep and split wide throughout; five more defenders run past
+    # 12 yd from 2.8 s: a read at 2.2 s still sees only the two safeties
+    read = FilmReadRule().read(_late_deep_play(), 50.0, 26.0)
+    assert read.n_deep == 2 and not read.mof_closed
+    late = FilmReadRule(count_read=(3.0, 12.0)).read(_late_deep_play(), 50.0, 26.0)
+    assert late.n_deep >= 4
 
 
 def test_deep_count_map_covers_every_mof_label():

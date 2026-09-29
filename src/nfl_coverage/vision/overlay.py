@@ -50,14 +50,14 @@ def los_pixels(calib, los: float, width: int, height: int) -> list[list[int]]:
     return [[round(float(x)), round(float(y))] for x, y in px[inside]]
 
 
-def overlay_frames(clip: TrackedClip, read: ClipRead, run_deep: float) -> dict:
+def overlay_frames(clip: TrackedClip, read: ClipRead) -> dict:
     """JSON-able per-frame overlay for the page (`overlay.json`)."""
     h, w = clip.frames[0].image.shape[:2]
     side_by_id, line_ids = read.sides.side_by_id, read.sides.line_ids
     frames = []
     for fr, calib in zip(clip.frames, clip.calibrations):
         rel = fr.index - read.snap_index
-        deep = deep_ids(read, rel, run_deep)
+        deep = deep_ids(read, rel, read.run_deep)
         boxes = []
         for box, tid in zip(fr.boxes, fr.ids):
             tid = int(tid)
@@ -79,7 +79,7 @@ def overlay_frames(clip: TrackedClip, read: ClipRead, run_deep: float) -> dict:
         "width": w,
         "height": h,
         "snap_t": read.snap_t,
-        "played_t": read.snap_t + read.declared_frame * read.step,
+        "played_t": read.snap_t + read.played_frame * read.step,
         "shown": rep.shown.shell,
         "played": rep.played.shell if rep.played else None,
         "frames": frames,
