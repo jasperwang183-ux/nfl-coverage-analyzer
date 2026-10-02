@@ -153,7 +153,7 @@ def test_the_roll_up_names_the_corner_who_drove_downhill_fastest():
     assert hits["nfl_id"].tolist() == [cb2_id]
 
 
-def test_a_roll_up_names_cover_2_behind_two_halves_and_cloud_behind_three_deep():
+def test_a_roll_up_names_cover_2_behind_two_halves():
     from nfl_coverage.analysis.mechanisms import CANDIDATES
     from nfl_coverage.analysis.report import disguise_verdict, played_read, structural_read
 
@@ -167,13 +167,3 @@ def test_a_roll_up_names_cover_2_behind_two_halves_and_cloud_behind_three_deep()
     shown = structural_read(two[two["rel_frame"] == 0], 49.5, 26.6, 9.0, "snap", [])
     label, text = disguise_verdict("", shown, read, [hit])
     assert label == "corner_roll_up" and "squat the flat" in text
-
-    # Cloud: the other corner bails to a third, the FS spins to the middle, the SS goes over
-    # the top of the rolled corner
-    cloud = {"CB1": (64.0, 6.0), "FS": (65.0, 26.6), "SS": (64.0, 42.0)}
-    soft_both = {**SOFT, "CB1": (58.0, 5.2)}
-    three = _roll_up(_play(1, 1, cloud, n_frames=21, base=soft_both))
-    hit = mechanism_hits(defender_phases(three), CANDIDATES).to_dict("records")[0]
-    read = played_read(three, 49.5, 26.6, 0.1, [], hit=hit)
-    assert (read.n_deep, read.mof_closed) == (3, True)
-    assert read.family.startswith("Cover 3 Cloud")
