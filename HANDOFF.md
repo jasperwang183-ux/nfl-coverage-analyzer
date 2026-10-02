@@ -1,4 +1,42 @@
-# Session Handoff — updated 2026-09-29
+# Session Handoff — updated 2026-10-02
+
+## Corner roll-up fitted and registered (2026-10-02)
+
+The third first-second mechanism, `corner_roll_up` in `analysis/mechanisms.py`, is now in
+MECHANISMS after pole_run and late_post (the film path passes only the first coverage
+hit). It covers a corner aligned soft (a Cover 3 or 4 bail look) who comes downhill to squat the flat:
+the Cover 2 trap. The rules were drafted in a cloud session without data
+(`claude/gracious-gates-ht1yb0`, merged), then fitted here by `scripts/fit_corner_roll_up.py` on
+weeks 1-4 of both seasons (corner phases cached in `data/processed/corner_phases_tuning.parquet`).
+
+- Fitted rule: >= 6 yd off at the snap, <= -0.5 yd/s over +0.7-1.2 s, <= 8 yd deep and
+  >= 16 yd wide at the landmark. The sweep is a plateau (lift 4.5-5.8 over many settings),
+  not a peak; this setting sits near its middle and holds in both seasons (Cover 2 zone
+  79% of 2018 hits, 52% of 2023, base 12%).
+- No first-step bail: soft Cover 2 corners come down from the snap (first-step velocity
+  p25 -0.2 yd/s vs +0.4 in Cover 3), so `ROLL_UP_FIRST_MIN` is None.
+- Implies Cover 2 or Cover 6 zone: 21% of hits are Cover 6 (its half side plays a Cover 2
+  corner). No Cloud: Cover 3 is 3% of hits against a 34% base, so the Cover 3 Cloud
+  family name in `report.played_read` and its test were dropped.
+- Tuning, by the look at the snap: two-high Cover 2/6 zone 30% -> 97% with Cover 4
+  24% -> 3% (59 plays); single-high 9% -> 67% (18 plays, Cover 1 22%).
+- **Holdout, scored once (never re-score):** lift 3.1, fires on 0.9%; single-high
+  12% -> 68% with Cover 1 37% -> 14% (28 plays); two-high 33% -> 74%, but Cover 4 stays
+  20% (46 plays). The "trap, not quarters" split from two-high did not hold out:
+  2-Read/Palms brings a corner down on #2 too. The played family text still says "the
+  trap, not quarters" (`report.played_read`); softening it is open for the user.
+- Verify film `before-roll-up` -> `after-roll-up`: no clip changed (8/11 read; 1533's
+  Captures file is missing, 1531a/b fail at read, as before). Page clips 187dcd12b5d2
+  (pole_run, Tampa 2) and 4eb4037babe6 (late_post) re-read offline with identical results.
+  `verify.py bdb film_read` was not run: the roll-up does not change the deep count or the
+  middle, which is all it scores.
+- `test_page_e2e.py` had failed since 0630fc3 (KeyError on the removed `played_n_deep`);
+  fixed in 6cebea3. pytest: 224 passed + the 2 fixed e2e tests (file re-run, 5 passed).
+- Film check wanted: `find_mechanism_plays.py corner_roll_up --games 2023091010 2023091709`
+  finds one play, MIA @ LAC wk 1 (LAC defense) Q4 12:00, 1st & 10, Tagovailoa to Berrios
+  short middle for 15 (challenged, upheld); label Cover 2 zone; CB nfl_id 53476 aligned
+  7 yd off near the y = 7.5 sideline, -1.1 yd/s, 7 yd deep at +2.0 s. Nothing fires in
+  SF @ LA.
 
 ## 2018 snap alignment fixed (2026-09-29)
 
