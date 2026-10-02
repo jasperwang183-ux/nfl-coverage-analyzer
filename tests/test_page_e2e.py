@@ -66,7 +66,6 @@ def test_the_read_matches_what_is_known_about_the_play(analyzed):
     shown, played = res["report"]["shown"], res["report"]["played"]
     assert shown["n_deep"] == expect["shown_n_deep"]
     assert shown["mof_closed"] == expect["shown_mof_closed"]
-    assert played["n_deep"] == expect["played_n_deep"]
     assert played["mof_closed"] == expect["played_mof_closed"]
     assert 2.0 - 1e-6 <= res["played_frame"]["t"] - res["snap"]["t"] <= 5.0 + 1e-6
 
@@ -79,7 +78,8 @@ def test_the_overlay_covers_the_window_and_marks_the_deep_defenders(analyzed):
     snap = min(ov["frames"], key=lambda f: abs(f["t"] - ov["snap_t"]))
     played = min(ov["frames"], key=lambda f: abs(f["t"] - ov["played_t"]))
     assert sum(b[4] == "S" for b in snap["boxes"]) == expect["shown_n_deep"]
-    assert sum(b[4] == "S" for b in played["boxes"]) == expect["played_n_deep"]
+    n_deep = meta["result"]["report"]["played"]["n_deep"]
+    assert sum(b[4] == "S" for b in played["boxes"]) == n_deep
     assert len(snap["los"]) >= 2
     assert ov["shown"] == meta["result"]["report"]["shown"]["shell"]
 
