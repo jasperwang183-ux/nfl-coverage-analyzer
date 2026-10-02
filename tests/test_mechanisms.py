@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 import pytest
-from test_disguise import DEFENSE, _play
+from test_disguise import DEFENSE, HOLD, OFFENSE, _play
 
 from nfl_coverage.analysis.mechanisms import mechanism_component, mechanism_hits
 from nfl_coverage.features.phases import defender_phases
@@ -102,3 +102,78 @@ def test_a_late_post_short_of_the_count_line_is_still_the_single_high_safety():
     read = played_read(play, 49.5, 26.6, 0.1, [], hit=hits[0])
     assert (read.n_deep, read.mof_closed) == (1, True)
     assert "Cover 1 or Cover 3" in read.family
+
+
+# Corner roll-up: CB2 aligned 8.5 yd off bails 2.5 yd/s for 0.6 s, then drives downhill to
+# 3.5 yd deep at +2.0 s, staying wide (20 yd off the center). Far from every threshold the
+# fit sweeps, so these plays keep their meaning when the thresholds move.
+SOFT = {**DEFENSE, "CB2": (58.0, 47.0)}
+
+
+def _roll_up(play, name="CB2", start=58.0, end=53.0):
+    """Move one defender's x along a bail-then-drive path (the linear `_play` cannot)."""
+    nid = list({**OFFENSE, **SOFT}).index(name) + 1
+    t = play["rel_frame"] / 10
+    turn = start + 2.5 * 0.6
+    x = np.where(t <= 0.6, start + 2.5 * t, turn + (end - turn) * (t - 0.6) / 1.4)
+    rows = play["nfl_id"] == nid
+    play.loc[rows, "x"] = x[rows]
+    return play
+
+
+def test_the_corner_roll_up_fires_on_a_soft_corner_who_drives_downhill():
+    from nfl_coverage.analysis.mechanisms import CANDIDATES
+
+    bail = {"CB2": (64.0, 47.0)}  # a Cover 3 corner bailing to his third
+    plays = pd.concat(
+        [_roll_up(_play(1, 1, HOLD, n_frames=21, base=SOFT)), _play(1, 2, bail, 21, SOFT)]
+    )
+    phases = defender_phases(plays)
+    cb2 = phases[(phases["play_id"] == 1) & (phases["role"] == "corner")]
+    cb2 = cb2.loc[cb2["align_depth"].idxmax()]
+    assert cb2["first_v_depth"] > 0 and cb2["commit_v_depth"] < -3
+    assert cb2["landmark_depth"] == pytest.approx(3.5)
+
+    hits = mechanism_hits(phases, CANDIDATES)
+    assert hits["play_id"].tolist() == [1]
+    assert hits.iloc[0]["nfl_id"] == cb2["nfl_id"]
+    assert "flat" in hits.iloc[0]["text"]
+    assert mechanism_hits(phases).empty  # not registered in MECHANISMS until it is fitted
+
+
+def test_the_roll_up_names_the_corner_who_drove_downhill_fastest():
+    from nfl_coverage.analysis.mechanisms import CANDIDATES
+
+    both_soft = {**SOFT, "CB1": (58.0, 5.2)}
+    play = _play(1, 1, HOLD, n_frames=21, base=both_soft)
+    play = _roll_up(_roll_up(play, "CB1", end=55.0), "CB2", end=53.0)
+    phases = defender_phases(play)
+    hits = mechanism_hits(phases, CANDIDATES)
+    cb2_id = list({**OFFENSE, **both_soft}).index("CB2") + 1
+    assert hits["nfl_id"].tolist() == [cb2_id]
+
+
+def test_a_roll_up_names_cover_2_behind_two_halves_and_cloud_behind_three_deep():
+    from nfl_coverage.analysis.mechanisms import CANDIDATES
+    from nfl_coverage.analysis.report import disguise_verdict, played_read, structural_read
+
+    two = _roll_up(_play(1, 1, HOLD, n_frames=21, base=SOFT))
+    hit = mechanism_hits(defender_phases(two), CANDIDATES).to_dict("records")[0]
+    read = played_read(two, 49.5, 26.6, 0.1, [], hit=hit)
+    assert (read.n_deep, read.mof_closed) == (2, False)
+    assert read.family.startswith("Cover 2 (a corner squats")
+    assert any("rolled up" in r for r in read.reasons)
+
+    shown = structural_read(two[two["rel_frame"] == 0], 49.5, 26.6, 9.0, "snap", [])
+    label, text = disguise_verdict("", shown, read, [hit])
+    assert label == "corner_roll_up" and "squat the flat" in text
+
+    # Cloud: the other corner bails to a third, the FS spins to the middle, the SS goes over
+    # the top of the rolled corner
+    cloud = {"CB1": (64.0, 6.0), "FS": (65.0, 26.6), "SS": (64.0, 42.0)}
+    soft_both = {**SOFT, "CB1": (58.0, 5.2)}
+    three = _roll_up(_play(1, 1, cloud, n_frames=21, base=soft_both))
+    hit = mechanism_hits(defender_phases(three), CANDIDATES).to_dict("records")[0]
+    read = played_read(three, 49.5, 26.6, 0.1, [], hit=hit)
+    assert (read.n_deep, read.mof_closed) == (3, True)
+    assert read.family.startswith("Cover 3 Cloud")

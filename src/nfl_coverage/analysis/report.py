@@ -219,6 +219,8 @@ def played_read(
     (`analysis.mechanisms`) that says what a runner in the deep middle is: a pole runner
     covers the hole, not a half, so the structure is read without him (Tampa 2 when two
     halves remain); a late post is the single-high safety even short of the count line.
+    A corner roll-up never reaches the count line, so it names the family, not the count:
+    two halves behind him are Cover 2, three deep with the middle closed is Cover 3 Cloud.
     """
     kind = hit["mechanism"] if hit else None
     if kind == "pole_run":
@@ -249,6 +251,12 @@ def played_read(
         reasons.append("a box defender ran the pole; he is not counted as a deep safety")
         if n == 2 and not closed:
             family = "Tampa 2 (Cover 2 zone, a runner down the middle)"
+    if kind == "corner_roll_up":
+        reasons.append("a soft corner rolled up to squat the flat; he is not a deep third")
+        if n == 2 and not closed:
+            family = "Cover 2 (a corner squats the flat: the trap, not quarters)"
+        elif n == 3 and closed:
+            family = "Cover 3 Cloud (a corner rolled to the flat, a safety over the top)"
     return replace(
         count,
         frame=f"{middle.frame} (middle) / {count.frame} (count)",
