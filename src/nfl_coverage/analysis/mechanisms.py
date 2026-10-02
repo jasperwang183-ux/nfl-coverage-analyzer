@@ -29,6 +29,7 @@ class Mechanism:
     implies: frozenset[str]  # the labels a hit points to
     fires: Callable[[pd.DataFrame], pd.Series]  # per defender row of defender_phases
     text: Callable[[pd.Series], str]
+    downhill: bool = False  # the defender who ran it is the fastest toward the LOS, not away
 
 
 def _deep_middle_run(p: pd.DataFrame) -> pd.Series:
@@ -88,7 +89,58 @@ LATE_POST = Mechanism(
     ),
 )
 
+# Cover 2 trap / Cloud: a corner aligned soft, reading like a Cover 3 or 4 bail, stops after
+# his first steps and drives downhill to squat the flat. Its opposite, press to bail, is
+# Cover 3 technique, not a disguise, so it is not a row.
+# NOT FITTED YET: the thresholds below are placeholders until `scripts/fit_corner_roll_up.py`
+# runs on the tuning weeks, so the row stays out of MECHANISMS until it shows lift there.
+ROLL_UP_ALIGN_MIN = 6.0  # yd off the LOS at the snap: soft, not press
+ROLL_UP_FIRST_MIN = 0.0  # yd/s over +0.3-0.7 s: he gave ground or held, the bail look
+ROLL_UP_COMMIT_MAX = -1.0  # yd/s over +0.7-1.2 s: driving toward the LOS
+ROLL_UP_LANDMARK_MAX = 6.0  # yd deep at the landmark: a flat squat, not a deep third
+ROLL_UP_LAT_MIN = 8.0  # yd off the formation center at the landmark: outside, in the flat
+
+
+def _corner_roll_up(
+    p: pd.DataFrame,
+    align_min: float = ROLL_UP_ALIGN_MIN,
+    first_min: float | None = ROLL_UP_FIRST_MIN,
+    commit_max: float = ROLL_UP_COMMIT_MAX,
+    landmark_max: float = ROLL_UP_LANDMARK_MAX,
+    lat_min: float | None = ROLL_UP_LAT_MIN,
+) -> pd.Series:
+    """A corner aligned soft who drives downhill into the flat. None skips a condition."""
+    fires = (
+        (p["role"] == "corner")
+        & (p["align_depth"] >= align_min)
+        & (p["commit_v_depth"] <= commit_max)
+        & (p["landmark_depth"] <= landmark_max)
+    )
+    if first_min is not None:
+        fires &= p["first_v_depth"] >= first_min
+    if lat_min is not None:
+        fires &= p["landmark_lat"].abs() >= lat_min
+    return fires
+
+
+CORNER_ROLL_UP = Mechanism(
+    name="corner_roll_up",
+    kind="coverage",
+    implies=frozenset({"COVER_2_ZONE"}),
+    fires=_corner_roll_up,
+    text=lambda r: (
+        f"a corner aligned {r['align_depth']:.0f} yd off stopped his bail and drove downhill "
+        f"({r['commit_v_depth']:.1f} yd/s by +1.2 s) to squat the flat "
+        f"{r['landmark_depth']:.0f} yd deep at +{r['landmark_t']:.1f} s: a Cover 2 trap or "
+        "Cloud corner, not a deep third"
+    ),
+    downhill=True,
+)
+
 MECHANISMS: tuple[Mechanism, ...] = (POLE_RUN, LATE_POST)
+# Rows written but not yet shown to lift their families on the tuning weeks: the scripts
+# can score them, the page does not run them.
+CANDIDATES: tuple[Mechanism, ...] = (CORNER_ROLL_UP,)
 
 HIT_COLUMNS = ["mechanism", "kind", "nfl_id", "t", "text"]
 
@@ -102,7 +154,8 @@ def mechanism_hits(
         hit = phases[m.fires(phases).fillna(False)]
         if hit.empty:
             continue
-        best = hit.loc[hit.groupby(KEYS)["commit_v_depth"].idxmax()]
+        speed = -hit["commit_v_depth"] if m.downhill else hit["commit_v_depth"]
+        best = hit.loc[speed.groupby([hit[k] for k in KEYS]).idxmax()]
         parts.append(
             best[KEYS].assign(
                 mechanism=m.name,
