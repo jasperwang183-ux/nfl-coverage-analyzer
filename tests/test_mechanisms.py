@@ -122,8 +122,6 @@ def _roll_up(play, name="CB2", start=58.0, end=53.0):
 
 
 def test_the_corner_roll_up_fires_on_a_soft_corner_who_drives_downhill():
-    from nfl_coverage.analysis.mechanisms import CANDIDATES
-
     bail = {"CB2": (64.0, 47.0)}  # a Cover 3 corner bailing to his third
     plays = pd.concat(
         [_roll_up(_play(1, 1, HOLD, n_frames=21, base=SOFT)), _play(1, 2, bail, 21, SOFT)]
@@ -134,31 +132,27 @@ def test_the_corner_roll_up_fires_on_a_soft_corner_who_drives_downhill():
     assert cb2["first_v_depth"] > 0 and cb2["commit_v_depth"] < -3
     assert cb2["landmark_depth"] == pytest.approx(3.5)
 
-    hits = mechanism_hits(phases, CANDIDATES)
+    hits = mechanism_hits(phases)
     assert hits["play_id"].tolist() == [1]
     assert hits.iloc[0]["nfl_id"] == cb2["nfl_id"]
     assert "flat" in hits.iloc[0]["text"]
-    assert mechanism_hits(phases).empty  # not registered in MECHANISMS until it is fitted
 
 
 def test_the_roll_up_names_the_corner_who_drove_downhill_fastest():
-    from nfl_coverage.analysis.mechanisms import CANDIDATES
-
     both_soft = {**SOFT, "CB1": (58.0, 5.2)}
     play = _play(1, 1, HOLD, n_frames=21, base=both_soft)
     play = _roll_up(_roll_up(play, "CB1", end=55.0), "CB2", end=53.0)
     phases = defender_phases(play)
-    hits = mechanism_hits(phases, CANDIDATES)
+    hits = mechanism_hits(phases)
     cb2_id = list({**OFFENSE, **both_soft}).index("CB2") + 1
     assert hits["nfl_id"].tolist() == [cb2_id]
 
 
 def test_a_roll_up_names_cover_2_behind_two_halves():
-    from nfl_coverage.analysis.mechanisms import CANDIDATES
     from nfl_coverage.analysis.report import disguise_verdict, played_read, structural_read
 
     two = _roll_up(_play(1, 1, HOLD, n_frames=21, base=SOFT))
-    hit = mechanism_hits(defender_phases(two), CANDIDATES).to_dict("records")[0]
+    hit = mechanism_hits(defender_phases(two)).to_dict("records")[0]
     read = played_read(two, 49.5, 26.6, 0.1, [], hit=hit)
     assert (read.n_deep, read.mof_closed) == (2, False)
     assert read.family.startswith("Cover 2 (a corner squats")

@@ -95,6 +95,10 @@ LATE_POST = Mechanism(
 # Cover 2 corners never bail first (first-step velocity p25 -0.2 yd/s vs +0.4 in Cover 3),
 # so the first-step condition is off. Fires on 78 plays (1.0%): Cover 2 zone 68% (base 12%),
 # Cover 6 zone 21% (the half side), Cover 3 zone 3% (base 34%: no Cloud), Cover 1 man 5%.
+# By the look at the snap: from two-high Cover 2/6 zone 30% -> 97% and Cover 4 24% -> 3%
+# (59 plays, the trap read as quarters), from single-high 9% -> 67% (18 plays, Cover 1 22%).
+# Holdout (scored once): lift 3.1 (0.9% of plays); single-high 12% -> 68% and Cover 1
+# 37% -> 14% (28 plays); two-high 33% -> 74% but Cover 4 stays 20% (46 plays).
 ROLL_UP_ALIGN_MIN = 6.0  # yd off the LOS at the snap: soft, not press
 ROLL_UP_FIRST_MIN = None  # yd/s over +0.3-0.7 s; None: the data drops it
 ROLL_UP_COMMIT_MAX = -0.5  # yd/s over +0.7-1.2 s: coming toward the LOS
@@ -138,10 +142,11 @@ CORNER_ROLL_UP = Mechanism(
     downhill=True,
 )
 
-MECHANISMS: tuple[Mechanism, ...] = (POLE_RUN, LATE_POST)
+# The film path reads only the first coverage hit, so the roll-up goes after the deep runs.
+MECHANISMS: tuple[Mechanism, ...] = (POLE_RUN, LATE_POST, CORNER_ROLL_UP)
 # Rows written but not yet shown to lift their families on the tuning weeks: the scripts
 # can score them, the page does not run them.
-CANDIDATES: tuple[Mechanism, ...] = (CORNER_ROLL_UP,)
+CANDIDATES: tuple[Mechanism, ...] = ()
 
 HIT_COLUMNS = ["mechanism", "kind", "nfl_id", "t", "text"]
 
