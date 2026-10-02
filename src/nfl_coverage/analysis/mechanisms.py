@@ -89,16 +89,17 @@ LATE_POST = Mechanism(
     ),
 )
 
-# Cover 2 trap / Cloud: a corner aligned soft, reading like a Cover 3 or 4 bail, stops after
-# his first steps and drives downhill to squat the flat. Its opposite, press to bail, is
-# Cover 3 technique, not a disguise, so it is not a row.
-# NOT FITTED YET: the thresholds below are placeholders until `scripts/fit_corner_roll_up.py`
-# runs on the tuning weeks, so the row stays out of MECHANISMS until it shows lift there.
+# Cover 2 trap: a corner aligned soft, reading like a Cover 3 or 4 bail, comes downhill to
+# squat the flat. Its opposite, press to bail, is Cover 3 technique, not a disguise, so it
+# is not a row. Fitted by `scripts/fit_corner_roll_up.py` on weeks 1-4 (7,620 plays): soft
+# Cover 2 corners never bail first (first-step velocity p25 -0.2 yd/s vs +0.4 in Cover 3),
+# so the first-step condition is off. Fires on 78 plays (1.0%): Cover 2 zone 68% (base 12%),
+# Cover 6 zone 21% (the half side), Cover 3 zone 3% (base 34%: no Cloud), Cover 1 man 5%.
 ROLL_UP_ALIGN_MIN = 6.0  # yd off the LOS at the snap: soft, not press
-ROLL_UP_FIRST_MIN = 0.0  # yd/s over +0.3-0.7 s: he gave ground or held, the bail look
-ROLL_UP_COMMIT_MAX = -1.0  # yd/s over +0.7-1.2 s: driving toward the LOS
-ROLL_UP_LANDMARK_MAX = 6.0  # yd deep at the landmark: a flat squat, not a deep third
-ROLL_UP_LAT_MIN = 8.0  # yd off the formation center at the landmark: outside, in the flat
+ROLL_UP_FIRST_MIN = None  # yd/s over +0.3-0.7 s; None: the data drops it
+ROLL_UP_COMMIT_MAX = -0.5  # yd/s over +0.7-1.2 s: coming toward the LOS
+ROLL_UP_LANDMARK_MAX = 8.0  # yd deep at the landmark: a flat squat, not a deep third
+ROLL_UP_LAT_MIN = 16.0  # yd off the formation center at the landmark: wide, in the flat
 
 
 def _corner_roll_up(
@@ -126,13 +127,13 @@ def _corner_roll_up(
 CORNER_ROLL_UP = Mechanism(
     name="corner_roll_up",
     kind="coverage",
-    implies=frozenset({"COVER_2_ZONE"}),
+    implies=frozenset({"COVER_2_ZONE", "COVER_6_ZONE"}),
     fires=_corner_roll_up,
     text=lambda r: (
-        f"a corner aligned {r['align_depth']:.0f} yd off stopped his bail and drove downhill "
+        f"a corner aligned {r['align_depth']:.0f} yd off came downhill "
         f"({r['commit_v_depth']:.1f} yd/s by +1.2 s) to squat the flat "
-        f"{r['landmark_depth']:.0f} yd deep at +{r['landmark_t']:.1f} s: a Cover 2 trap or "
-        "Cloud corner, not a deep third"
+        f"{r['landmark_depth']:.0f} yd deep at +{r['landmark_t']:.1f} s: a Cover 2 trap corner "
+        "(or Cover 6's half side), not a deep third"
     ),
     downhill=True,
 )
