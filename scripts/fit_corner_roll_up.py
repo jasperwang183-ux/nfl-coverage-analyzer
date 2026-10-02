@@ -39,9 +39,9 @@ COLUMNS = ["align_depth", "first_v_depth", "commit_v_depth", "landmark_depth", "
 GRID = {
     "align_min": [5.0, 6.0, 7.0, 8.0],
     "first_min": [None, -0.5, 0.0, 0.5],
-    "commit_max": [-0.5, -1.0, -1.5, -2.0, -3.0],
-    "landmark_max": [4.0, 5.0, 6.0, 7.0, 8.0],
-    "lat_min": [None, 6.0, 10.0, 14.0],
+    "commit_max": [0.0, -0.5, -1.0, -1.5, -2.0, -3.0],
+    "landmark_max": [4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+    "lat_min": [None, 6.0, 10.0, 12.0, 14.0, 16.0, 18.0],
 }
 
 
