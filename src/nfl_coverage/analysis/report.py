@@ -220,7 +220,8 @@ def played_read(
     covers the hole, not a half, so the structure is read without him (Tampa 2 when two
     halves remain); a late post is the single-high safety even short of the count line.
     A corner roll-up never reaches the count line, so it names the family, not the count:
-    two halves behind him are Cover 2, the trap rather than quarters.
+    two halves behind him are the Cover 2 trap, or 2-Read bringing a corner down on #2
+    (a fifth of two-high hits on the holdout were Cover 4).
     """
     kind = hit["mechanism"] if hit else None
     if kind == "pole_run":
@@ -254,7 +255,7 @@ def played_read(
     if kind == "corner_roll_up":
         reasons.append("a soft corner rolled up to squat the flat; he is not a deep third")
         if n == 2 and not closed:
-            family = "Cover 2 (a corner squats the flat: the trap, not quarters)"
+            family = "Cover 2 trap, or 2-Read on that side (a corner squats the flat)"
     return replace(
         count,
         frame=f"{middle.frame} (middle) / {count.frame} (count)",

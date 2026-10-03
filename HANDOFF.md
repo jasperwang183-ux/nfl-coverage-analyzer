@@ -23,8 +23,8 @@ weeks 1-4 of both seasons (corner phases cached in `data/processed/corner_phases
 - **Holdout, scored once (never re-score):** lift 3.1, fires on 0.9%; single-high
   12% -> 68% with Cover 1 37% -> 14% (28 plays); two-high 33% -> 74%, but Cover 4 stays
   20% (46 plays). The "trap, not quarters" split from two-high did not hold out:
-  2-Read/Palms brings a corner down on #2 too. The played family text still says "the
-  trap, not quarters" (`report.played_read`); softening it is open for the user.
+  2-Read/Palms brings a corner down on #2 too, so the played family now reads "Cover 2
+  trap, or 2-Read on that side" (`report.played_read`, user, 2026-10-02).
 - Verify film `before-roll-up` -> `after-roll-up`: no clip changed (8/11 read; 1533's
   Captures file is missing, 1531a/b fail at read, as before). Page clips 187dcd12b5d2
   (pole_run, Tampa 2) and 4eb4037babe6 (late_post) re-read offline with identical results.
