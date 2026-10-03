@@ -155,7 +155,7 @@ def test_a_roll_up_names_cover_2_behind_two_halves():
     hit = mechanism_hits(defender_phases(two)).to_dict("records")[0]
     read = played_read(two, 49.5, 26.6, 0.1, [], hit=hit)
     assert (read.n_deep, read.mof_closed) == (2, False)
-    assert read.family.startswith("Cover 2 (a corner squats")
+    assert read.family.startswith("Cover 2 trap, or 2-Read")
     assert any("rolled up" in r for r in read.reasons)
 
     shown = structural_read(two[two["rel_frame"] == 0], 49.5, 26.6, 9.0, "snap", [])
