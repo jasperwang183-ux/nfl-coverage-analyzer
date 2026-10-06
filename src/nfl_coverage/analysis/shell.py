@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from nfl_coverage.config import FIELD_WIDTH
-from nfl_coverage.features.alignment import KEYS, _los_estimate
+from nfl_coverage.features.alignment import KEYS, snap_los
 
 DEEP_DEPTH = 9.0  # yards beyond the LOS that reads as a deep (shell) defender at the snap
 MOF_HALFWIDTH = 3.5  # a post player sits within this of the formation center
@@ -78,6 +78,7 @@ def shell_state(
     deep_depth: float = DEEP_DEPTH,
     los: float | None = None,
     center: float | None = None,
+    ball_spots: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """One row per play: the shell as seen at `rel_frame`.
 
@@ -86,7 +87,7 @@ def shell_state(
     started on. A clip has no linked snap frame, so `los`/`center` can be given
     explicitly (canonical coords). Plays missing the requested frame are dropped.
     """
-    defense = deep_defenders(frames, rel_frame, deep_depth, los=los, center=center)
+    defense = deep_defenders(frames, rel_frame, deep_depth, los, center, ball_spots)
     at = frames[frames["rel_frame"] == rel_frame]
     off_at = at[(at["side"] == "Offense") & (at["position"] != "QB")]
     defense["press"] = _near_offense(defense, off_at)
@@ -132,8 +133,12 @@ def deep_defenders(
     deep_depth: float = DEEP_DEPTH,
     los: float | None = None,
     center: float | None = None,
+    ball_spots: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Per-defender geometry at `rel_frame` (LOS and center from the snap).
+
+    Without `los`, the LOS is the ball spot from `ball_spots` when given, else the
+    stand-in (`features.alignment.snap_los`).
 
     Columns: KEYS + nfl_id, x, y, depth, offset (|y - center|), deep, widest
     (the outermost defender on each side — the corners, whoever is playing
@@ -143,7 +148,7 @@ def deep_defenders(
     if los is None or center is None:
         snap = frames[frames["rel_frame"] == 0]
         offense_snap = snap[snap["side"] == "Offense"]
-        los_s = _los_estimate(offense_snap).rename("los")
+        los_s = snap_los(offense_snap, ball_spots)
         center_s = _formation_center(offense_snap).rename("center")
         d = at.join(los_s, on=KEYS).join(center_s, on=KEYS)
         if los is not None:

@@ -27,7 +27,7 @@ from nfl_coverage.analysis.harness import MOF_CLOSED_BY_COVERAGE
 from nfl_coverage.analysis.report import structural_read
 from nfl_coverage.analysis.shell import DEEP_DEPTH, _formation_center
 from nfl_coverage.config import COVERAGE_CLASSES, DATA_PROCESSED
-from nfl_coverage.features.alignment import KEYS, _los_estimate
+from nfl_coverage.features.alignment import KEYS, snap_los
 
 TABLES_PATH = DATA_PROCESSED / "tendencies.parquet"
 PLAYS_PATH = DATA_PROCESSED / "tendency_plays.parquet"
@@ -53,13 +53,16 @@ def situation(down: pd.Series, yards_to_go: pd.Series) -> pd.Series:
     return late.where(down >= 3, SITUATIONS[0])
 
 
-def shown_reads(frames: pd.DataFrame) -> pd.DataFrame:
-    """The page's pre-snap structural read of every play at the snap (~8 ms a play)."""
+def shown_reads(frames: pd.DataFrame, ball_spots: pd.DataFrame | None = None) -> pd.DataFrame:
+    """The page's pre-snap structural read of every play at the snap (~8 ms a play).
+
+    `ball_spots` measures depth from the ball instead of the stand-in LOS.
+    """
     rows = []
     for key, snap in frames[frames["rel_frame"] == 0].groupby(KEYS, sort=False):
         off = snap[snap["side"] == "Offense"]
         try:
-            los = float(_los_estimate(off).iloc[0])
+            los = float(snap_los(off, ball_spots).iloc[0])
             center = float(_formation_center(off).iloc[0])
             read = structural_read(snap, los, center, DEEP_DEPTH, "snap", [], 0)
         except (ValueError, IndexError, KeyError):

@@ -54,15 +54,19 @@ def _center_by_play(frames: pd.DataFrame, center: float | None) -> pd.Series | f
 
 
 def snap_roles(
-    frames: pd.DataFrame, los: float | None = None, center: float | None = None
+    frames: pd.DataFrame,
+    los: float | None = None,
+    center: float | None = None,
+    ball_spots: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """One row per defender at the snap: KEYS + nfl_id + ROLE_COLUMNS.
 
     `lateral` is y - center (signed), `dist_to_ball_lat` its absolute value; the
     formation center stands in for the ball, which canonical frames do not carry.
-    `los`/`center` override the per-play estimates (film), as in `shell_state`.
+    `los`/`center` override the per-play estimates (film), as in `shell_state`;
+    `ball_spots` measures depth from the ball instead of the stand-in LOS.
     """
-    d = deep_defenders(frames, 0, DEEP_DEPTH, los=los, center=center)
+    d = deep_defenders(frames, 0, DEEP_DEPTH, los=los, center=center, ball_spots=ball_spots)
     c = _center_by_play(frames, center)
     if isinstance(c, pd.Series):
         d = d.join(c, on=KEYS)

@@ -37,7 +37,7 @@ from nfl_coverage.analysis.harness import (
 from nfl_coverage.analysis.report import COUNT_READ, MOF_READ, StructuralRead, played_read
 from nfl_coverage.analysis.shell import _formation_center
 from nfl_coverage.config import DATA_PROCESSED, FIELD_LENGTH
-from nfl_coverage.features.alignment import KEYS, _los_estimate
+from nfl_coverage.features.alignment import KEYS, snap_los
 from nfl_coverage.vision.formation import infer_formation
 
 FRAMES_DIR = DATA_PROCESSED / "frames"
@@ -143,9 +143,9 @@ def formation_side(frames: pd.DataFrame, noisy: bool, seed: int = 0) -> dict:
 # ------------------------------------------------------------------ shells
 
 
-def shell_mof(frames: pd.DataFrame) -> dict:
+def shell_mof(frames: pd.DataFrame, ball_spots: pd.DataFrame | None = None) -> dict:
     """The tracking-data shell reader's played MOF state vs the coverage label."""
-    table = shell_rotation(frames)
+    table = shell_rotation(frames, ball_spots=ball_spots)
     labels = frames.groupby(KEYS)["coverage_type"].first().reset_index()
     table = table.merge(labels, on=KEYS, how="left")
     acc = run_shell_accuracy(table)
@@ -177,6 +177,7 @@ def film_read_eval(
     sample: int = 400,
     seed: int = 0,
     window: int = FILM_WINDOW_FRAMES,
+    ball_spots: pd.DataFrame | None = None,
 ) -> dict[str, dict]:
     """The film path's played read vs the labels, per rule, on one seeded play sample.
 
@@ -199,7 +200,7 @@ def film_read_eval(
         truth_mof = bool(MOF_CLOSED_BY_COVERAGE[label])
         truth_deep = DEEP_COUNT_BY_COVERAGE.get(label)
         try:
-            los = float(_los_estimate(off).iloc[0])
+            los = float(snap_los(off, ball_spots).iloc[0])
             center = float(_formation_center(off).iloc[0])
         except (ValueError, IndexError, KeyError):
             for r in rules:
@@ -240,10 +241,11 @@ def film_read_mof(
     seed: int = 0,
     window: int = FILM_WINDOW_FRAMES,
     rule: FilmReadRule | None = None,
+    ball_spots: pd.DataFrame | None = None,
 ) -> dict:
     """The film path's current played read (or `rule`) scored on a play sample."""
     rule = rule or FilmReadRule()
-    return film_read_eval(frames, [rule], sample, seed, window)[rule.name]
+    return film_read_eval(frames, [rule], sample, seed, window, ball_spots)[rule.name]
 
 
 def tuning_weeks(dataset: str) -> list[int]:
@@ -403,12 +405,17 @@ def sequence_model(frames_by_ds: dict[str, pd.DataFrame], name: str = SEQUENCE_M
 # ------------------------------------------------------------------ disguise
 
 
-def disguise_hand_labels(frames_by_ds: dict[str, pd.DataFrame]) -> dict:
+def disguise_hand_labels(
+    frames_by_ds: dict[str, pd.DataFrame], ball_spots: pd.DataFrame | None = None
+) -> dict:
     """Precision / recall of the rotation component on hand-labeled holdout plays."""
     labels = load_labels()
     if not len(labels):
         return {"n": 0, "note": "no hand labels"}
-    table = pd.concat([shell_rotation(f) for f in frames_by_ds.values()], ignore_index=True)
+    table = pd.concat(
+        [shell_rotation(f, ball_spots=ball_spots) for f in frames_by_ds.values()],
+        ignore_index=True,
+    )
     ev = evaluate(table, labels)
     if not len(ev):
         return {"n": 0, "note": "no hand-labeled plays in the holdout weeks"}
@@ -429,8 +436,12 @@ def run_holdout(
     datasets: tuple[str, ...] = ("bdb2021", "bdb2026"),
     sample: int = 400,
     log: Callable[[str], None] = print,
+    ball_spots: pd.DataFrame | None = None,
 ) -> dict:
-    """Every requested check on the frozen holdout; {check: {dataset|all: metrics}}."""
+    """Every requested check on the frozen holdout; {check: {dataset|all: metrics}}.
+
+    `ball_spots` measures the shell, film-read and disguise checks from the ball.
+    """
     results: dict[str, dict] = {c: {} for c in checks}
     frames_by_ds: dict[str, pd.DataFrame] = {}
     needs_frames = {"formation", "shell", "film_read", "disguise", "sequence"} & set(checks)
@@ -444,10 +455,10 @@ def run_holdout(
             results["formation"][f"{ds}_filmlike"] = formation_side(frames, noisy=True)
         if "shell" in checks:
             log(f"  shell {ds}")
-            results["shell"][ds] = shell_mof(frames)
+            results["shell"][ds] = shell_mof(frames, ball_spots)
         if "film_read" in checks:
             log(f"  film read {ds} ({sample} plays)")
-            results["film_read"][ds] = film_read_mof(frames, sample)
+            results["film_read"][ds] = film_read_mof(frames, sample, ball_spots=ball_spots)
     if "variant" in checks:
         log("  variant model")
         results["variant"]["all"] = variant_model()
@@ -456,5 +467,5 @@ def run_holdout(
         results["sequence"] = sequence_model(frames_by_ds)
     if "disguise" in checks:
         log("  disguise hand labels")
-        results["disguise"]["all"] = disguise_hand_labels(frames_by_ds)
+        results["disguise"]["all"] = disguise_hand_labels(frames_by_ds, ball_spots)
     return results

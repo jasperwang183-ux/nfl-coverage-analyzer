@@ -21,6 +21,18 @@ def _los_estimate(offense: pd.DataFrame) -> pd.Series:
     return offense.groupby(KEYS)["x"].quantile(0.75).rename("los")
 
 
+def snap_los(offense_snap: pd.DataFrame, ball_spots: pd.DataFrame | None = None) -> pd.Series:
+    """LOS per play: the ball spot when `ball_spots` is given, else the stand-in.
+
+    `ball_spots` is `data.ball_spots.load_ball_spots()` (KEYS + ball_x). A play missing
+    from it gets NaN rather than the stand-in, so the two zeros never mix in one table.
+    """
+    stand_in = _los_estimate(offense_snap)
+    if ball_spots is None:
+        return stand_in
+    return ball_spots.set_index(KEYS)["ball_x"].reindex(stand_in.index).rename("los")
+
+
 def snapshot_features(frames: pd.DataFrame, rel_frame: int = 0) -> pd.DataFrame:
     """Per-play alignment features at one rel_frame. Returns one row per play."""
     snap = frames[frames["rel_frame"] == rel_frame]

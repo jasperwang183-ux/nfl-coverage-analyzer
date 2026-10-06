@@ -161,3 +161,13 @@ def test_a_roll_up_names_cover_2_behind_two_halves():
     shown = structural_read(two[two["rel_frame"] == 0], 49.5, 26.6, 9.0, "snap", [])
     label, text = disguise_verdict("", shown, read, [hit])
     assert label == "corner_roll_up" and "squat the flat" in text
+
+
+def test_ball_spots_move_every_depth_and_no_speed():
+    play = _play(1, 1, POLE, n_frames=21, base=TAMPA)
+    spots = pd.DataFrame({"dataset": ["test"], "game_id": [1], "play_id": [1], "ball_x": [50.5]})
+    old, new = _mike(defender_phases(play)), _mike(defender_phases(play, ball_spots=spots))
+    # the stand-in LOS is 49.5, the ball 1 yd further on: depths shrink by 1, speeds do not
+    assert new["align_depth"] == pytest.approx(old["align_depth"] - 1.0)
+    assert new["landmark_depth"] == pytest.approx(old["landmark_depth"] - 1.0)
+    assert new["commit_v_depth"] == pytest.approx(old["commit_v_depth"])

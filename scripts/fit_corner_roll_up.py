@@ -30,10 +30,11 @@ from nfl_coverage.analysis.holdout import FRAMES_DIR, TUNING
 from nfl_coverage.analysis.mechanisms import _corner_roll_up
 from nfl_coverage.analysis.tendencies import CLASSES, shown_reads
 from nfl_coverage.config import DATA_PROCESSED
+from nfl_coverage.data.ball_spots import load_ball_spots
 from nfl_coverage.features.alignment import KEYS
 from nfl_coverage.features.phases import defender_phases
 
-CACHE = DATA_PROCESSED / "corner_phases_tuning.parquet"
+CACHE = DATA_PROCESSED / "corner_phases_tuning_ball.parquet"  # depths from the ball spot
 GROUPS = ["COVER_2_ZONE", "COVER_3_ZONE", "COVER_4_ZONE", "COVER_1_MAN"]
 COLUMNS = ["align_depth", "first_v_depth", "commit_v_depth", "landmark_depth", "abs_lat"]
 GRID = {
@@ -50,13 +51,14 @@ def load(rebuild: bool) -> pd.DataFrame:
     if CACHE.exists() and not rebuild:
         return pd.read_parquet(CACHE)
     releases = pd.read_parquet(DATA_PROCESSED / "releases.parquet")
+    spots = load_ball_spots()
     parts = []
     for ds, ws in TUNING.items():
         for w in ws:
             frames = pd.read_parquet(FRAMES_DIR / f"{ds}_w{w:02d}.parquet")
             labels = frames.groupby(KEYS, as_index=False)["coverage_type"].first()
-            plays = labels.merge(shown_reads(frames)[KEYS + ["shown"]], on=KEYS)
-            phases = defender_phases(frames, releases)
+            plays = labels.merge(shown_reads(frames, spots)[KEYS + ["shown"]], on=KEYS)
+            phases = defender_phases(frames, releases, ball_spots=spots)
             parts.append(phases[phases["role"] == "corner"].merge(plays, on=KEYS))
             print(f"  {ds} w{w:02d}")
     corners = pd.concat(parts, ignore_index=True)

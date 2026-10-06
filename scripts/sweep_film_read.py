@@ -26,6 +26,7 @@ from nfl_coverage.analysis.holdout import (
 )
 from nfl_coverage.analysis.report import COUNT_READ, MOF_READ
 from nfl_coverage.config import ROOT
+from nfl_coverage.data.ball_spots import load_ball_spots
 from nfl_coverage.features.alignment import KEYS
 
 MOF_READS = [(1.2, 11.0), (1.5, 11.0), (1.5, 12.0), (1.8, 12.0)]
@@ -51,10 +52,11 @@ def main() -> None:
         FilmReadRule(MOF_READ, c) for c in COUNT_READS if c != COUNT_READ
     ]
     results = {}
+    ball_spots = load_ball_spots()
     for ds in ("bdb2021", "bdb2026"):
         plays = sample_tuning_plays(ds, args.per_week)
         print(f"{ds}: {plays.groupby(KEYS).ngroups} plays from weeks {tuning_weeks(ds)}")
-        results[ds] = film_read_eval(plays, rules, sample=0)
+        results[ds] = film_read_eval(plays, rules, sample=0, ball_spots=ball_spots)
 
     print(
         f"\n{'rule':<24}"

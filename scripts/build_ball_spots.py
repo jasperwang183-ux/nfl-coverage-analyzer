@@ -17,11 +17,15 @@ import time
 import pandas as pd
 
 from nfl_coverage.config import BDB2021, BDB2026, DATA_PROCESSED, FIELD_LENGTH
-from nfl_coverage.data.ball_spots import ball_spots_bdb2021, ball_spots_bdb2026
+from nfl_coverage.data.ball_spots import (
+    BALL_SPOTS_PATH,
+    ball_spots_bdb2021,
+    ball_spots_bdb2026,
+)
 from nfl_coverage.features.alignment import _los_estimate
 
 FRAMES_DIR = DATA_PROCESSED / "frames"
-DEST = DATA_PROCESSED / "ball_spots.parquet"
+DEST = BALL_SPOTS_PATH
 KEYS = ["game_id", "play_id"]
 
 

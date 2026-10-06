@@ -19,6 +19,7 @@ import pandas as pd
 from nfl_coverage.analysis.holdout import FRAMES_DIR, HOLDOUT
 from nfl_coverage.analysis.mechanisms import CANDIDATES, MECHANISMS, mechanism_hits
 from nfl_coverage.config import BDB2026, DATA_PROCESSED
+from nfl_coverage.data.ball_spots import load_ball_spots
 from nfl_coverage.features.alignment import KEYS
 from nfl_coverage.features.phases import defender_phases
 
@@ -52,12 +53,14 @@ def main() -> None:
         ap.error(f"weeks {weeks} include holdout weeks {HOLDOUT['bdb2026']}")
 
     releases = pd.read_parquet(DATA_PROCESSED / "releases.parquet")
+    spots = load_ball_spots()
     rows = []
     for w in weeks:
         frames = pd.read_parquet(FRAMES_DIR / f"bdb2026_w{w:02d}.parquet")
         frames = frames[frames["game_id"].isin(args.games)]
         labels = frames.groupby(KEYS, as_index=False)["coverage_type"].first()
-        hits = mechanism_hits(defender_phases(frames, releases), (by_name[args.mechanism],))
+        phases = defender_phases(frames, releases, ball_spots=spots)
+        hits = mechanism_hits(phases, (by_name[args.mechanism],))
         rows.append(hits.merge(labels, on=KEYS))
     hits = pd.concat(rows, ignore_index=True)
     if args.labels:
