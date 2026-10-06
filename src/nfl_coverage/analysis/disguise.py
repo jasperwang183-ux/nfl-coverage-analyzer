@@ -58,6 +58,7 @@ def shell_rotation(
     run_deep_depth: float = RUN_DEEP_DEPTH,
     center: float | None = None,
     los: float | None = None,
+    ball_spots: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Shell at the snap vs. shell at +1.5 s; the most common disguise.
 
@@ -68,14 +69,27 @@ def shell_rotation(
     ROTATION_SCORES order; the score is that label's weight.
     """
     run_frames = _run_frame_per_play(frames, run_frame)
-    shown = shell_state(frames, 0, center=center, los=los).set_index(KEYS)
+    shown = shell_state(frames, 0, center=center, los=los, ball_spots=ball_spots).set_index(KEYS)
     run = _at_run_frame(
-        frames, run_frames, shell_state, deep_depth=run_deep_depth, center=center, los=los
+        frames,
+        run_frames,
+        shell_state,
+        deep_depth=run_deep_depth,
+        center=center,
+        los=los,
+        ball_spots=ball_spots,
     ).set_index(KEYS)
 
-    d0 = deep_defenders(frames, 0, center=center, los=los).set_index(KEYS + ["nfl_id"])
+    d0 = deep_defenders(frames, 0, center=center, los=los, ball_spots=ball_spots)
+    d0 = d0.set_index(KEYS + ["nfl_id"])
     d1 = _at_run_frame(
-        frames, run_frames, deep_defenders, deep_depth=run_deep_depth, center=center, los=los
+        frames,
+        run_frames,
+        deep_defenders,
+        deep_depth=run_deep_depth,
+        center=center,
+        los=los,
+        ball_spots=ball_spots,
     ).set_index(KEYS + ["nfl_id"])
     both = d0[["depth", "deep", "widest"]].join(
         d1[["depth", "deep"]].rename(columns={"depth": "depth1", "deep": "deep1"}), how="inner"

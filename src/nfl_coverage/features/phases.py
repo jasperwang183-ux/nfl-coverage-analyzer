@@ -19,7 +19,7 @@ import pandas as pd
 
 from nfl_coverage.analysis.roles import snap_roles
 from nfl_coverage.analysis.shell import _formation_center
-from nfl_coverage.features.alignment import KEYS, _los_estimate
+from nfl_coverage.features.alignment import KEYS, snap_los
 
 FIRST_STEPS = (0.3, 0.7)  # s after the snap
 COMMIT = (0.7, 1.2)  # s: a disguise is decided by here (a spin is done by ~0.5 s)
@@ -43,9 +43,15 @@ PHASE_COLUMNS = [
 ]
 
 
-def _snap_reference(frames: pd.DataFrame, los: float | None, center: float | None):
+def _snap_reference(
+    frames: pd.DataFrame,
+    los: float | None,
+    center: float | None,
+    ball_spots: pd.DataFrame | None = None,
+):
     snap = frames[(frames["rel_frame"] == 0) & (frames["side"] == "Offense")]
-    ref = pd.concat([_los_estimate(snap), _formation_center(snap).rename("center")], axis=1)
+    los_s = snap_los(snap, ball_spots)
+    ref = pd.concat([los_s, _formation_center(snap).rename("center")], axis=1)
     if los is not None:
         ref["los"] = los
     if center is not None:
@@ -64,17 +70,20 @@ def defender_phases(
     los: float | None = None,
     center: float | None = None,
     step: float = 0.1,
+    ball_spots: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """KEYS + nfl_id + PHASE_COLUMNS for every defender tracked at the snap.
 
     `releases` holds KEYS + `release_rel_frame` (data/processed/releases.parquet);
     without it the landmark is read at LANDMARK_CAP_S or the play's last frame.
     `los`/`center` override the per-play estimates (film), `step` is s per rel_frame.
+    `ball_spots` (KEYS + ball_x, `data.ball_spots`) measures depth from the ball instead
+    of the stand-in LOS.
     """
     # one cached 2018 play (game 2018091605) carries every row twice
     frames = frames.drop_duplicates(KEYS + ["nfl_id", "rel_frame"])
-    roles = snap_roles(frames, los=los, center=center).set_index(KEYS + ["nfl_id"])
-    ref = _snap_reference(frames, los, center)
+    roles = snap_roles(frames, los, center, ball_spots).set_index(KEYS + ["nfl_id"])
+    ref = _snap_reference(frames, los, center, ball_spots)
     d = frames[(frames["side"] == "Defense") & (frames["rel_frame"] >= 0)].join(ref, on=KEYS)
     d = d.assign(depth=d["x"] - d["los"], lat=d["y"] - d["center"])
 

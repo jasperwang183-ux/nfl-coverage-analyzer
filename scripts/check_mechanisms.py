@@ -22,6 +22,7 @@ from nfl_coverage.analysis.holdout import FRAMES_DIR, HOLDOUT, TUNING
 from nfl_coverage.analysis.mechanisms import CANDIDATES, MECHANISMS, Mechanism, mechanism_hits
 from nfl_coverage.analysis.tendencies import CLASSES, shown_reads
 from nfl_coverage.config import DATA_PROCESSED
+from nfl_coverage.data.ball_spots import load_ball_spots
 from nfl_coverage.features.alignment import KEYS
 from nfl_coverage.features.phases import defender_phases
 
@@ -30,13 +31,16 @@ def load(
     weeks: dict[str, list[int]], mechanisms: tuple[Mechanism, ...] = MECHANISMS
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     releases = pd.read_parquet(DATA_PROCESSED / "releases.parquet")
+    spots = load_ball_spots()
     plays, hits = [], []
     for ds, ws in weeks.items():
         for w in ws:
             frames = pd.read_parquet(FRAMES_DIR / f"{ds}_w{w:02d}.parquet")
             labels = frames.groupby(KEYS, as_index=False)["coverage_type"].first()
-            plays.append(labels.merge(shown_reads(frames)[KEYS + ["shown"]], on=KEYS))
-            hits.append(mechanism_hits(defender_phases(frames, releases), mechanisms))
+            shown = shown_reads(frames, spots)[KEYS + ["shown"]]
+            plays.append(labels.merge(shown, on=KEYS))
+            phases = defender_phases(frames, releases, ball_spots=spots)
+            hits.append(mechanism_hits(phases, mechanisms))
             print(f"  {ds} w{w:02d}")
     plays = pd.concat(plays, ignore_index=True)
     return plays[plays["coverage_type"].isin(CLASSES)], pd.concat(hits, ignore_index=True)

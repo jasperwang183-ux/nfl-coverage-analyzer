@@ -69,3 +69,20 @@ def test_bdb2026_takes_the_recorded_spot_and_mirrors_left_plays():
     )
     out = ball_spots_bdb2026(tracking).set_index("play_id")["ball_x"]
     assert out.to_dict() == {10: 65.0, 11: 78.0}
+
+
+def test_snap_los_is_the_ball_spot_when_given_and_nan_for_a_missing_play():
+    from nfl_coverage.features.alignment import snap_los
+
+    offense = pd.DataFrame(
+        {
+            "dataset": ["t"] * 4,
+            "game_id": [1] * 4,
+            "play_id": [1, 1, 2, 2],
+            "x": [40.0, 44.0, 60.0, 64.0],
+        }
+    )
+    assert snap_los(offense).tolist() == [43.0, 63.0]  # the stand-in, 75th pct of x
+    spots = pd.DataFrame({"dataset": ["t"], "game_id": [1], "play_id": [1], "ball_x": [45.0]})
+    got = snap_los(offense, spots)
+    assert got.iloc[0] == 45.0 and np.isnan(got.iloc[1])

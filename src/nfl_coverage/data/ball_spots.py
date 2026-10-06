@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import pandas as pd
 
-from nfl_coverage.config import FIELD_LENGTH
+from nfl_coverage.config import DATA_PROCESSED, FIELD_LENGTH
 from nfl_coverage.data.loaders import _BDB2021_RENAMES, bdb2021_snap_frames
 from nfl_coverage.data.standardize import flip_left_plays
 
 BALL_SPOT_COLUMNS = ["dataset", "game_id", "play_id", "ball_x"]
+BALL_SPOTS_PATH = DATA_PROCESSED / "ball_spots.parquet"  # scripts/build_ball_spots.py
 
 _KEYS = ["game_id", "play_id"]
 
@@ -51,6 +52,10 @@ def ball_spots_bdb2026(tracking: pd.DataFrame) -> pd.DataFrame:
     left = first["play_direction"].str.lower().eq("left")
     out = first[_KEYS].assign(ball_x=spot.where(~left, FIELD_LENGTH - spot))
     return _finish(out, "bdb2026")
+
+
+def load_ball_spots() -> pd.DataFrame:
+    return pd.read_parquet(BALL_SPOTS_PATH)
 
 
 def _finish(out: pd.DataFrame, dataset: str) -> pd.DataFrame:

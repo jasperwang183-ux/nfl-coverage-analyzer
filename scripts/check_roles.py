@@ -16,6 +16,7 @@ import pandas as pd
 
 from nfl_coverage.analysis.holdout import FRAMES_DIR, HOLDOUT
 from nfl_coverage.analysis.roles import ROLES, snap_roles
+from nfl_coverage.data.ball_spots import load_ball_spots
 from nfl_coverage.features.alignment import KEYS
 
 GROUPS = {
@@ -43,7 +44,7 @@ def check(dataset: str, weeks: list[int]) -> None:
         [pd.read_parquet(FRAMES_DIR / f"{dataset}_w{w:02d}.parquet") for w in weeks],
         ignore_index=True,
     )
-    roles = snap_roles(frames)
+    roles = snap_roles(frames, ball_spots=load_ball_spots())
     snap = frames[(frames["rel_frame"] == 0) & (frames["side"] == "Defense")]
     pos = snap.drop_duplicates(KEYS + ["nfl_id"])[KEYS + ["nfl_id", "position"]]
     r = roles.merge(pos, on=KEYS + ["nfl_id"], how="left")
