@@ -19,7 +19,7 @@ import pandas as pd
 from nfl_coverage.config import FIELD_WIDTH
 from nfl_coverage.features.alignment import KEYS, snap_los
 
-DEEP_DEPTH = 9.0  # yards beyond the LOS that reads as a deep (shell) defender at the snap
+DEEP_DEPTH = 9.0  # yards past the ball that reads as a deep (shell) defender at the snap
 MOF_HALFWIDTH = 3.5  # a post player sits within this of the formation center
 MOF_PARTNER_MIN = 8.0  # ...and has no deep partner closer than this to the center (split safeties)
 MOF_SINGLE_HALFWIDTH = 8.0  # a lone deep safety shaded this far off the ball is still single-high
