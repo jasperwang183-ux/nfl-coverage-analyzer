@@ -34,12 +34,11 @@ from nfl_coverage.features.alignment import KEYS
 Role = Literal["corner", "safety", "box", "apex"]
 ROLES: tuple[Role, ...] = ("corner", "safety", "box", "apex")
 
-# Off-ball linebackers sit 5-7 yd deep on these pass plays (median ~5.5 yd): the 5 yd
-# box-count line (shell.BOX_DEPTH) drops a third of them, 6 yd a quarter. Inside the
-# box width, 7-8 yd is still ~2.5 linebackers per safety on tuning weeks; 8-9 yd is not.
-BOX_ROLE_DEPTH = 8.0
+# Depths are yards past the ball spot. 7 yd from the ball keeps the defenders the old
+# 8 yd line kept from the stand-in LOS, which sat ~1 yd behind the ball.
+BOX_ROLE_DEPTH = 7.0
 BOX_HALFWIDTH = 5.0  # the tackle box, measured off the ball
-LINE_DEPTH = 3.0  # linemen and edge rushers align within ~2.5 yd of the offense's LOS
+LINE_DEPTH = 3.0  # linemen and edge rushers; 2 yd drops ~7 points of edge OLBs
 EDGE_HALFWIDTH = 8.0  # a 9-technique / wide edge off a tight end
 WIDE_SAFETY_OFFSET = 8.0
 
