@@ -22,7 +22,9 @@ from nfl_coverage.models.persist import predict_proba
 
 RUN_FRAME = 20  # 2.0 s post-snap (or the throw if earlier): calibrated in docs/DISGUISE_PLAN.md
 MIN_RUN_FRAME = 10  # a play that ends before 1.0 s cannot be read
-RUN_DEEP_DEPTH = 14.0  # by 2 s every zone dropper is past 9 yd; deep responsibility is deeper
+# By 2 s every zone dropper is past 9 yd; deep responsibility is deeper. Yards past the ball:
+# 2018 peaks at 14.5-15, 2023 at 13; 13.5 loses the least in the worse season (1.0 pt).
+RUN_DEEP_DEPTH = 13.5
 ROTATION_MIN_MOVE = 3.0  # yards a defender must move for a shell change to count as a rotation
 
 # score per label: real shell lies score 1, mechanics a QB expects score low
