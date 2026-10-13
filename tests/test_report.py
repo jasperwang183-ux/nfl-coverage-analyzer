@@ -1,11 +1,13 @@
 """Structural reads with confidence, separate from the model's variant probabilities."""
 
 import numpy as np
+import pandas as pd
 
 from nfl_coverage.analysis.report import (
     CoverageReport,
     disguise_text,
     model_read,
+    played_read,
     structural_read,
     variant_confidence,
 )
@@ -66,6 +68,27 @@ def test_post_safety_reads_closed():
     r = structural_read(_frame(post), 49.5, 26.6, 9.0, "+2 s", caveats=[])
     assert r.n_deep == 1 and r.mof_closed
     assert "Cover 1 or Cover 3" in r.family
+
+
+def _two_frames(before, after):
+    """A play read at +2.0 s whose defenders were at `before` 0.3 s earlier."""
+    a, b = _frame(before), _frame(after)
+    a["rel_frame"], b["rel_frame"] = 17, 20
+    return pd.concat([a, b], ignore_index=True)
+
+
+def test_count_reads_where_a_defender_is_headed():
+    base = [d for d in DEFENSE if d not in ((63.0, 18.0), (63.0, 35.0))]
+    # deep safety settled at 15 yd; a corner bailing 9.1 -> 10.0 yd (3 yd/s, headed to 10.6);
+    # a corner squatting at 10.0 yd; a robber driving down 12 -> 11 yd (headed to 10.3)
+    before = base + [(64.5, 27.0), (58.6, 5.0), (59.5, 48.0), (61.5, 22.0)]
+    after = base + [(64.5, 27.0), (59.5, 5.0), (59.5, 48.0), (60.5, 22.0)]
+    r = played_read(_two_frames(before, after), 49.5, 26.6, 0.1, [])
+    assert r.deep_depths == [15.0, 10.0]
+    assert any("10.0 yd, +3.0 yd/s -> headed to 10.6 yd -> deep" in x for x in r.reasons)
+    assert any("11.0 yd, -3.3 yd/s -> headed to 10.3 yd -> not deep" in x for x in r.reasons)
+    plain = played_read(_two_frames(before, after), 49.5, 26.6, 0.1, [], count_test=None)
+    assert plain.deep_depths == [15.0, 11.0]  # a plain line keeps the robber, drops the corner
 
 
 def test_variant_confidence_and_disguise_text():

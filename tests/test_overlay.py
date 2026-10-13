@@ -19,18 +19,28 @@ def _read(offense="left", los=40.0):
         (2, 20, 55.0, "Defense"),  # 15 yd after the snap
     ]
     tracks = pd.DataFrame(rows, columns=["nfl_id", "rel_frame", "x", "side"])
-    return SimpleNamespace(offense=offense, los=los, tracks=tracks)
+    return SimpleNamespace(offense=offense, los=los, tracks=tracks, step=0.1)
 
 
-def test_deep_uses_the_shown_depth_up_to_the_snap_and_the_played_depth_after():
+def test_deep_uses_the_shown_depth_up_to_the_snap_and_the_count_test_after():
     r = _read()
-    assert deep_ids(r, 0, run_deep=12.0) == {1}
-    assert deep_ids(r, 20, run_deep=12.0) == {2}
+    assert deep_ids(r, 0) == {1}
+    assert deep_ids(r, 20) == {2}
+
+
+def test_deep_after_the_snap_counts_where_a_defender_is_headed():
+    r = _read()
+    # 1 more frame for defender 1, 3 frames before frame 20: 8 yd -> 10 yd is 6.7 yd/s,
+    # headed past the 10.5 yd count line
+    r.tracks = pd.concat(
+        [r.tracks, pd.DataFrame([(1, 17, 48.0, "Defense")], columns=r.tracks.columns)]
+    )
+    assert deep_ids(r, 20) == {1, 2}
 
 
 def test_deep_measures_from_the_canonical_los_when_the_offense_is_on_the_right():
     r = _read(offense="right", los=80.0)  # canonical LOS = 120 - 80 = 40
-    assert deep_ids(r, 0, run_deep=12.0) == {1}
+    assert deep_ids(r, 0) == {1}
 
 
 def test_los_pixels_run_along_the_field_line_under_a_known_camera():

@@ -8,14 +8,15 @@ one-letter kind:
   L a line player (set aside from the coverage read), X an official or anyone
   the read did not side.
 
-"Deep" uses the read's own thresholds: SHOWN_DEEP up to the snap, the played
-read's depth after it.
+"Deep" uses the read's own tests: SHOWN_DEEP up to the snap, then where each defender
+is headed (`report.COUNT_TEST`), the same test the played card counts with.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
+from nfl_coverage.analysis.report import COUNT_TEST, ProjectedDepth, drop_rates
 from nfl_coverage.config import FIELD_LENGTH, FIELD_WIDTH
 from nfl_coverage.vision.pipeline import SHOWN_DEEP, ClipRead, TrackedClip
 
@@ -24,13 +25,18 @@ LOS_SAMPLES = (
 )
 
 
-def deep_ids(read: ClipRead, rel_frame: int, run_deep: float) -> set[int]:
-    """Defenders at safety depth on a frame, by the thresholds the shell read uses."""
+def deep_ids(read: ClipRead, rel_frame: int, test: ProjectedDepth = COUNT_TEST) -> set[int]:
+    """Defenders the shell read counts as deep on a frame, by the tests it uses."""
     los_c = FIELD_LENGTH - read.los if read.offense == "right" else read.los
     t = read.tracks
     rows = t[(t["rel_frame"] == rel_frame) & (t["side"] == "Defense")]
-    depth = SHOWN_DEEP if rel_frame <= 0 else run_deep
-    return {int(i) for i in rows.loc[rows["x"] - los_c >= depth, "nfl_id"]}
+    depth = rows["x"] - los_c
+    if rel_frame <= 0:
+        deep = depth >= SHOWN_DEEP
+    else:
+        rate = rows["nfl_id"].map(drop_rates(t, rel_frame, test.window, read.step)).fillna(0.0)
+        deep = depth + rate * test.lookahead >= test.line
+    return {int(i) for i in rows.loc[deep, "nfl_id"]}
 
 
 def los_pixels(calib, los: float, width: int, height: int) -> list[list[int]]:
@@ -57,7 +63,7 @@ def overlay_frames(clip: TrackedClip, read: ClipRead) -> dict:
     frames = []
     for fr, calib in zip(clip.frames, clip.calibrations):
         rel = fr.index - read.snap_index
-        deep = deep_ids(read, rel, read.run_deep)
+        deep = deep_ids(read, rel)
         boxes = []
         for box, tid in zip(fr.boxes, fr.ids):
             tid = int(tid)

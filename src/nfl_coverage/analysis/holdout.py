@@ -34,7 +34,14 @@ from nfl_coverage.analysis.harness import (
     load_labels,
     run_shell_accuracy,
 )
-from nfl_coverage.analysis.report import COUNT_READ, MOF_READ, StructuralRead, played_read
+from nfl_coverage.analysis.report import (
+    COUNT_READ,
+    COUNT_TEST,
+    MOF_READ,
+    ProjectedDepth,
+    StructuralRead,
+    played_read,
+)
 from nfl_coverage.analysis.shell import _formation_center
 from nfl_coverage.config import DATA_PROCESSED, FIELD_LENGTH
 from nfl_coverage.features.alignment import KEYS, snap_los
@@ -161,14 +168,23 @@ class FilmReadRule:
 
     mof_read: tuple[float, float] = MOF_READ
     count_read: tuple[float, float] = COUNT_READ
+    count_test: ProjectedDepth | None = COUNT_TEST
 
     @property
     def name(self) -> str:
         (mt, md), (ct, cd) = self.mof_read, self.count_read
-        return f"mof@{mt:.1f}s/{md:g}yd count@{ct:.1f}s/{cd:g}yd"
+        t = self.count_test
+        count = (
+            f"{cd:g}yd"
+            if t is None
+            else f"headed {t.line:g}yd {t.lookahead:g}s ahead, rate over {t.window:g}s"
+        )
+        return f"mof@{mt:.1f}s/{md:g}yd count@{ct:.1f}s/{count}"
 
     def read(self, play: pd.DataFrame, los: float, center: float) -> StructuralRead:
-        return played_read(play, los, center, 0.1, [], self.mof_read, self.count_read)
+        return played_read(
+            play, los, center, 0.1, [], self.mof_read, self.count_read, None, self.count_test
+        )
 
 
 def film_read_eval(

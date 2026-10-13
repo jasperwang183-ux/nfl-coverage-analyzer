@@ -40,10 +40,29 @@ CORNER_DEEP_DEPTH = 12.0  # the widest defender per side must be this deep to co
 # (features.phases), once quarters and Cover 3 corners have mostly bailed. Tuning weeks,
 # 2,400 plays: middle 0.768, count 0.392 at 2.0 s (0.406 at 2.2 s, inside noise, but film
 # has no throw frame and defenders break on a quick throw by 2.2 s), vs 0.559 / 0.290 for
-# the most-deep frame in 2-4 s it replaced.
-MOF_READ = (1.5, 11.0)
-COUNT_READ = (2.0, 12.0)
+# the most-deep frame in 2-4 s it replaced. Depths are yards past the ball; the middle line
+# and the count test were swept on the tuning weeks (scripts/sweep_film_read.py, 2026-10-13).
+MOF_READ = (1.5, 13.0)
+COUNT_READ = (2.0, 10.5)
 LEVELS = ["low", "medium", "high"]
+
+
+@dataclass(frozen=True)
+class ProjectedDepth:
+    """The count read's deep test on where each defender is headed: deep when his depth
+    plus `lookahead` s at his drop rate (yd/s away from the LOS over the last `window` s)
+    reaches `line`. A corner bailing at 11 yd counts before he gets there; a safety at 13 yd
+    driving down as a robber does not."""
+
+    line: float
+    lookahead: float
+    window: float
+
+
+# Swept against plain lines and a 10-13 yd band a defender must still be dropping through:
+# tied with the band, ahead of a plain line on the 2023 deep count (0.398 vs 0.357), and
+# simpler than the band. Look-ahead 0 (a plain line) and 0.5 s both fall off.
+COUNT_TEST = ProjectedDepth(line=COUNT_READ[1], lookahead=0.2, window=0.3)
 
 FAMILY = {
     (0, False): "Cover 0 (no deep help)",
@@ -105,18 +124,29 @@ def structural_read(
     frame: str,
     caveats: list[str],
     rel_frame: int = 0,
+    count_test: ProjectedDepth | None = None,
+    rates: pd.Series | None = None,
 ) -> StructuralRead:
     """Read one canonical frame's defense into structure + confidence + reasons.
 
     `analysis` is a canonical rel_frame-0 frame (coverage players only),
     `los`/`center` in canonical coords, `deep_depth` the deep threshold to use
-    (DEEP_DEPTH at the snap, deeper after it).
+    (DEEP_DEPTH at the snap, deeper after it). With a `count_test`, where each defender is
+    headed replaces the line (corners included), using `rates` (yd/s away from the LOS, by
+    nfl_id).
     """
     d = deep_defenders(analysis, rel_frame, deep_depth=deep_depth, los=los, center=center)
-    # an off corner at 9-11 yd is technique, not a deep safety: the widest defender
-    # on each side only counts as deep past CORNER_DEEP_DEPTH
-    corner_deep = max(deep_depth, CORNER_DEEP_DEPTH)
-    d["deep"] = np.where(d["widest"], d["depth"] >= corner_deep, d["deep"])
+    if count_test is None:
+        # an off corner at 9-11 yd is technique, not a deep safety: the widest defender
+        # on each side only counts as deep past CORNER_DEEP_DEPTH
+        corner_deep = max(deep_depth, CORNER_DEEP_DEPTH)
+        d["deep"] = np.where(d["widest"], d["depth"] >= corner_deep, d["deep"])
+        gaps = np.abs(d["depth"] - np.where(d["widest"], corner_deep, deep_depth))
+    else:
+        d["rate"] = d["nfl_id"].map(rates).fillna(0.0) if rates is not None else 0.0
+        d["projected"] = d["depth"] + d["rate"] * count_test.lookahead
+        d["deep"] = d["projected"] >= count_test.line
+        gaps = (d["projected"] - count_test.line).abs()
     deep = d[d["deep"]].sort_values("depth", ascending=False)
     n_deep = len(deep)
     offsets = np.sort(deep["offset"].to_numpy())
@@ -135,8 +165,7 @@ def structural_read(
             mof_margin = max(-near_slack, -partner_slack)
     # how far the *counted* deep players sit above their threshold, and how close
     # the deepest uncounted one is to joining them
-    thr = np.where(d["widest"], corner_deep, deep_depth)
-    gaps = np.abs(d["depth"].to_numpy() - thr)
+    gaps = np.asarray(gaps, dtype=float)
     depth_margin = float(gaps[d["deep"].to_numpy()].min()) if n_deep else float("inf")
     if (~d["deep"]).any():
         depth_margin = min(depth_margin, float(gaps[~d["deep"].to_numpy()].min()))
@@ -153,8 +182,14 @@ def structural_read(
 
     reasons = []
     if n_deep:
+        line = (
+            f"at least {deep_depth:.0f} yd deep"
+            if count_test is None
+            else f"headed past {count_test.line:g} yd ({count_test.lookahead:g} s ahead)"
+        )
+
         reasons.append(
-            f"{n_deep} defender{'s' if n_deep != 1 else ''} at least {deep_depth:.0f} yd deep "
+            f"{n_deep} defender{'s' if n_deep != 1 else ''} {line} "
             f"({', '.join(f'{v:.1f}' for v in deep['depth'])} yd)"
         )
         near = f"nearest deep player {offsets[0]:.1f} yd off the ball laterally"
@@ -162,7 +197,16 @@ def structural_read(
             near += f", next {offsets[1]:.1f} yd"
         reasons.append(near + (" -> middle closed" if mof_closed else " -> middle open"))
     else:
-        reasons.append(f"nobody {deep_depth:.0f} yd deep -> no deep help")
+        edge = deep_depth if count_test is None else count_test.line
+        reasons.append(f"nobody {edge:g} yd deep -> no deep help")
+    if count_test is not None:
+        # name the defenders whose movement changed the call
+        moved = d[(d["depth"] >= count_test.line) != d["deep"]]
+        for _, row in moved.iterrows():
+            reasons.append(
+                f"{row['depth']:.1f} yd, {row['rate']:+.1f} yd/s -> headed to "
+                f"{row['projected']:.1f} yd -> {'deep' if row['deep'] else 'not deep'}"
+            )
     if low is not None:
         reasons.append(
             f"widest defenders at {low['depth']:.1f} and {high['depth']:.1f} yd "
@@ -202,6 +246,22 @@ def played_frames(
     return tuple(min(round(t / step), last_rel_frame) for t, _ in (mof_read, count_read))
 
 
+def drop_rates(tracks: pd.DataFrame, rel_frame: int, window: float, step: float) -> pd.Series:
+    """yd/s each player moved away from the LOS over the `window` s before `rel_frame`.
+
+    Canonical x runs with the offense, so depth past the LOS changes with x alone.
+    """
+    back = max(rel_frame - max(round(window / step), 1), int(tracks["rel_frame"].min()))
+    if back >= rel_frame:
+        return pd.Series(dtype=float)
+    x = tracks[tracks["rel_frame"].isin([back, rel_frame])].pivot_table(
+        index="nfl_id", columns="rel_frame", values="x"
+    )
+    if back not in x or rel_frame not in x:
+        return pd.Series(dtype=float)
+    return ((x[rel_frame] - x[back]) / ((rel_frame - back) * step)).dropna()
+
+
 def played_read(
     tracks: pd.DataFrame,
     los: float,
@@ -211,9 +271,12 @@ def played_read(
     mof_read: tuple[float, float] = MOF_READ,
     count_read: tuple[float, float] = COUNT_READ,
     hit: dict | None = None,
+    count_test: ProjectedDepth | None = COUNT_TEST,
 ) -> StructuralRead:
     """The played structure: the middle from the early frame, the deep count from the later one.
 
+    The count read asks where each defender is headed (`count_test`, `COUNT_TEST` by
+    default); None reads the plain count line.
     When nobody is deep yet at the middle read (a post safety dropping late from a
     0-high look), the later frame decides the middle too. `hit` is a mechanism hit
     (`analysis.mechanisms`) that says what a runner in the deep middle is: a pole runner
@@ -228,11 +291,13 @@ def played_read(
         tracks = tracks[tracks["nfl_id"] != int(hit["nfl_id"])]
     mf, cf = played_frames(int(tracks["rel_frame"].max()), step, mof_read, count_read)
 
-    def at(rf: int, line: float) -> StructuralRead:
+    def at(rf: int, line: float, test: ProjectedDepth | None = None) -> StructuralRead:
         frame = tracks[tracks["rel_frame"] == rf]
-        return structural_read(frame, los, center, line, f"+{rf * step:.1f} s", caveats, rf)
+        when = f"+{rf * step:.1f} s"
+        rates = drop_rates(tracks, rf, test.window, step) if test else None
+        return structural_read(frame, los, center, line, when, caveats, rf, test, rates)
 
-    middle, count = at(mf, mof_read[1]), at(cf, count_read[1])
+    middle, count = at(mf, mof_read[1]), at(cf, count_read[1], count_test)
     src = middle if middle.n_deep else count
     closed = src.mof_closed
     n = count.n_deep

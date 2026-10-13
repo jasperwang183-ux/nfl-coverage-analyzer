@@ -75,7 +75,8 @@ def test_a_deep_middle_run_with_nobody_deep_at_the_snap_is_a_late_post():
 def test_the_pole_runner_is_not_a_deep_safety_and_the_verdict_leads_with_him():
     from nfl_coverage.analysis.report import disguise_verdict, played_read, structural_read
 
-    deep_pole = {**POLE, "MIKE": (63.0, 27.0)}  # 13.5 yd deep at +2.0 s, past the count line
+    # 13.75 yd deep at the +1.5 s middle read (past its 13 yd line), 16.5 yd at +2.0 s
+    deep_pole = {**POLE, "MIKE": (66.0, 27.0)}
     play = _play(1, 1, deep_pole, n_frames=21, base=TAMPA)
     phases = defender_phases(play)
     hits = mechanism_hits(phases).to_dict("records")
