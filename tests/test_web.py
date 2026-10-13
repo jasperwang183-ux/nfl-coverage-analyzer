@@ -5,7 +5,6 @@ import time
 
 import cv2
 import numpy as np
-import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
@@ -133,7 +132,6 @@ def client(tmp_path):
         model_path=tmp_path / "none.joblib",
         auto=False,
         sequence_path=tmp_path / "none.pt",
-        tendencies_path=tmp_path / "none.parquet",
     )
     return TestClient(app)
 
@@ -440,67 +438,3 @@ def test_the_calls_a_person_may_pick(client):
     assert "2-high MOF-open" in calls["shells"] and "4-deep" in calls["shells"]
     assert calls["variants"] == []  # no model bundle in this app
     assert calls["other"] == "Other"
-
-
-# ------------------------------------------------------------- tendencies
-
-
-@pytest.fixture()
-def tendency_client(tmp_path):
-    from nfl_coverage.analysis import tendencies as td
-
-    rows = [(2023, "MIA", "", "MOF open", "3rd/4th & long", "COVER_1_MAN", 1)] * 8 + [
-        (2023, "BUF", "", "MOF open", "early down", "COVER_4_ZONE", 1)
-    ] * 8
-    cols = ["season", "defense", "play_caller", "shown", "situation", "coverage_type", "week"]
-    td.build_tables(pd.DataFrame(rows, columns=cols), k=4).to_parquet(tmp_path / "t.parquet")
-    app = create_app(
-        data_dir=tmp_path / "web",
-        model_path=tmp_path / "none.joblib",
-        auto=False,
-        sequence_path=tmp_path / "none.pt",
-        tendencies_path=tmp_path / "t.parquet",
-    )
-    return TestClient(app)
-
-
-def _with_two_high_result(client, tmp_path) -> str:
-    cid = _upload(client, tmp_path)
-    shown = {"shell": "2-high MOF-open", "n_deep": 2, "mof_closed": False}
-    result = {"snap": {"t": 5.5}, "played_frame": {"t": 7.7}, "report": {"shown": shown}}
-    (tmp_path / "web" / cid / "result.json").write_text(json.dumps(result))
-    return cid
-
-
-def test_no_tendency_tables_means_no_defense_choices(client, tmp_path):
-    cid = _with_two_high_result(client, tmp_path)
-    assert client.get("/api/defenses").json() == {}
-    assert client.get(f"/api/clips/{cid}").json()["tendency"] is None
-
-
-def test_a_chosen_defense_reports_how_often_it_keeps_the_look(tendency_client, tmp_path):
-    cid = _with_two_high_result(tendency_client, tmp_path)
-    assert tendency_client.get("/api/defenses").json() == {"2023": ["BUF", "MIA"]}
-    body = {"season": 2023, "defense": "MIA", "down": 3, "to_go": 12}
-    r = tendency_client.post(f"/api/clips/{cid}/defense", json=body)
-    assert r.status_code == 200, r.text
-    t = r.json()["tendency"]
-    assert t["look"] == "MOF open" and t["situation"] == "3rd/4th & long"
-    assert t["team"]["n"] == 8
-    # MIA always rotated to Cover 1 from this look; the league kept it half the time
-    assert t["team"]["plays_it"] < t["league"]["plays_it"]
-    assert tendency_client.get(f"/api/clips/{cid}").json()["defense"] == body
-
-
-@pytest.mark.parametrize(
-    "body",
-    [
-        {"season": 2023, "defense": "OAK"},
-        {"season": 2018, "defense": "MIA"},
-        {"season": 2023, "defense": "MIA", "down": 5},
-        {"season": 2023, "defense": "MIA", "extra": 1},
-    ],
-)
-def test_an_unknown_defense_is_refused(tendency_client, tmp_path, body):
-    cid = _with_two_high_result(tendency_client, tmp_path)
-    assert tendency_client.post(f"/api/clips/{cid}/defense", json=body).status_code == 422
