@@ -32,7 +32,22 @@ class Mechanism:
     downhill: bool = False  # the defender who ran it is the fastest toward the LOS, not away
 
 
-def _deep_middle_run(p: pd.DataFrame) -> pd.Series:
+# yd past the ball at the landmark: in the deep middle. Refit from the ball on tuning weeks
+# 1-13 (scripts/fit_mechanism_depths.py, 2026-10-13): the pole run's lift holds within
+# 2 SE of its best at 10-10.5 yd in both seasons (5.04 / 5.62 at 10, 581 plays; 4.25 /
+# 5.31 at 9, 1,065 plays). With the pole run's 13 yd cap the plateau shrinks to 12 alone,
+# set by 36 plays of 2018 at the grid edge (54 in all); 10 kept: too few plays to trust.
+# The late post fires too rarely to fit and shares it.
+RUN_LANDMARK_MIN = 10.0
+# yd past the ball at the landmark: past this the runner is the safety, not a pole runner.
+# Tuning weeks, a safety deep at the snap: runners landing 13+ yd deep lift Cover 2 zone
+# only 4.17 / 2.57 (17 / 15 plays); capping at 13 keeps the lift (5.08 / 5.84, 368 / 182
+# plays). Pole run only: with nobody deep, 13+ yd runners are Cover 1/3 on 17 of 17 plays,
+# the late post's own safety.
+POLE_LANDMARK_MAX = 13.0
+
+
+def _deep_middle_run(p: pd.DataFrame, landmark_min: float = RUN_LANDMARK_MIN) -> pd.Series:
     """A box defender who commits deep and is in the deep middle by the landmark.
 
     A mugged linebacker counts (Warner on SF's Tampa 2 of 2023 wk 2 aligned 1.9 yd off
@@ -42,13 +57,25 @@ def _deep_middle_run(p: pd.DataFrame) -> pd.Series:
     return (
         (p["role"] == "box")
         & (p["commit_v_depth"] >= 1.5)
-        & (p["landmark_depth"] >= 9.0)
+        & (p["landmark_depth"] >= landmark_min)
         & (p["landmark_lat"].abs() <= 4.0)
     )
 
 
 def _safeties_at_snap(p: pd.DataFrame) -> pd.Series:
     return (p["role"] == "safety").groupby([p[k] for k in KEYS]).transform("sum")
+
+
+def _pole_run(
+    p: pd.DataFrame,
+    landmark_min: float = RUN_LANDMARK_MIN,
+    landmark_max: float = POLE_LANDMARK_MAX,
+) -> pd.Series:
+    return (
+        _deep_middle_run(p, landmark_min)
+        & (p["landmark_depth"] < landmark_max)
+        & (_safeties_at_snap(p) > 0)
+    )
 
 
 def _speed(r: pd.Series) -> str:
@@ -68,7 +95,7 @@ POLE_RUN = Mechanism(
     name="pole_run",
     kind="coverage",
     implies=frozenset({"COVER_2_ZONE"}),
-    fires=lambda p: _deep_middle_run(p) & (_safeties_at_snap(p) > 0),
+    fires=_pole_run,
     text=lambda r: (
         f"a box defender ran the deep middle between the safeties {_speed(r)}: Tampa 2's pole "
         "runner, or a Cover 3 hook defender carrying the seam; not man"
@@ -99,7 +126,10 @@ LATE_POST = Mechanism(
 # (59 plays, the trap read as quarters), from single-high 9% -> 67% (18 plays, Cover 1 22%).
 # Holdout (scored once): lift 3.1 (0.9% of plays); single-high 12% -> 68% and Cover 1
 # 37% -> 14% (28 plays); two-high 33% -> 74% but Cover 4 stays 20% (46 plays).
-ROLL_UP_ALIGN_MIN = 6.0  # yd off the LOS at the snap: soft, not press
+# Refit from the ball on tuning weeks 1-13 (2026-10-13): the roll-up's lift is flat over
+# cushions of 4-8 yd and landmarks of 6.5-10 yd (3.5-4.1); its tell is the downhill drive
+# into the flat, not these depths. The middle of that plateau:
+ROLL_UP_ALIGN_MIN = 5.5  # yd off the ball at the snap: soft, not press
 ROLL_UP_FIRST_MIN = None  # yd/s over +0.3-0.7 s; None: the data drops it
 ROLL_UP_COMMIT_MAX = -0.5  # yd/s over +0.7-1.2 s: coming toward the LOS
 ROLL_UP_LANDMARK_MAX = 8.0  # yd deep at the landmark: a flat squat, not a deep third

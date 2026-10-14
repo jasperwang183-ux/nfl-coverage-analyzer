@@ -75,14 +75,14 @@ def test_a_deep_middle_run_with_nobody_deep_at_the_snap_is_a_late_post():
 def test_the_pole_runner_is_not_a_deep_safety_and_the_verdict_leads_with_him():
     from nfl_coverage.analysis.report import disguise_verdict, played_read, structural_read
 
-    # 13.75 yd deep at the +1.5 s middle read (past its 13 yd line), 16.5 yd at +2.0 s
-    deep_pole = {**POLE, "MIKE": (66.0, 27.0)}
+    # 12.5 yd at +2.0 s, inside the pole run's 13 yd cap and past the count line
+    deep_pole = {**POLE, "MIKE": (62.0, 27.0)}
     play = _play(1, 1, deep_pole, n_frames=21, base=TAMPA)
     phases = defender_phases(play)
     hits = mechanism_hits(phases).to_dict("records")
     as_safety = played_read(play, 49.5, 26.6, 0.1, [])
     as_runner = played_read(play, 49.5, 26.6, 0.1, [], hit=hits[0])
-    assert (as_safety.n_deep, as_safety.mof_closed) == (3, True)  # reads like Cover 3
+    assert as_safety.n_deep == 3  # counted as a third deep defender
     assert (as_runner.n_deep, as_runner.mof_closed) == (2, False)
     assert as_runner.family.startswith("Tampa 2")
 
@@ -91,6 +91,20 @@ def test_the_pole_runner_is_not_a_deep_safety_and_the_verdict_leads_with_him():
     assert label == "pole_run" and "Tampa 2" in text
     label, text = disguise_verdict("threshold_flicker", shown, as_runner, [])
     assert label == "threshold_flicker" and text.startswith("no disguise")
+
+
+def test_a_runner_past_13_yd_is_the_safety_not_a_pole_runner():
+    from nfl_coverage.analysis.report import played_read
+
+    past_cap = {"MIKE": (66.0, 27.0)}  # 16.5 yd at +2.0 s
+    play = _play(1, 1, {**POLE, **past_cap}, n_frames=21, base=TAMPA)
+    assert mechanism_hits(defender_phases(play)).empty
+    read = played_read(play, 49.5, 26.6, 0.1, [])
+    assert (read.n_deep, read.mof_closed) == (3, True)
+
+    zero = {**TAMPA, "FS": (57.0, 18.0), "SS": (57.0, 35.0)}
+    hits = mechanism_hits(defender_phases(_play(1, 1, past_cap, n_frames=21, base=zero)))
+    assert hits["mechanism"].tolist() == ["late_post"]
 
 
 def test_a_late_post_short_of_the_count_line_is_still_the_single_high_safety():
