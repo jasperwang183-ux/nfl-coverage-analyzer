@@ -1,4 +1,38 @@
-# Session Handoff — updated 2026-10-02
+# Session Handoff — updated 2026-10-19
+
+## Ball-spot migration and the buzz scored on the holdout (2026-10-19)
+
+Units A-D moved every depth from the stand-in LOS to the ball spot (7346123, e5bc0a2,
+d2acc47, d8cb47c). Unit R added the fourth first-second mechanism, `buzz_soft` (204126a),
+and unit E scored every refit rule on the frozen holdout once. **Never re-score these.**
+Outputs are in `data/verify/holdout/*_unit_e_2026-10-19.txt` and the `unit-e-holdout` run.
+
+- **buzz_soft.** A safety deep at the snap comes down (-0.5 yd/s by +1.2 s), lands more
+  than 7.5 yd wide and under 10 yd deep, the corners average 4 yd or more off the ball,
+  and the other safety ends deep in the middle. Tuning weeks 1-13: 447 plays, Cover 3
+  85.7% (84.7 / 86.8). It was picked by the analyst's walk in `fit_mechanism_depths.py`
+  (stable start, loosen while a step buys 2.5 right per wrong, look past one short step,
+  85% on 200+ plays). The pass marks were committed before scoring (456fb5a): 82% strong,
+  70-82% lean, under 70% dropped. Holdout: 182 plays, 81.3% (80.5 / 82.1), Cover 1 on 26,
+  so the card now says "a buzz, leans Cover 3".
+- **Dropped by the same rule:** robber to the middle hole behind press corners (70 stable
+  plays, under its 75 floor) or off corners (best 68%), and the wide drop behind press
+  corners (best 55% on 200+ plays). Those plays keep the rotation line.
+- **The other mechanisms on the holdout (report only, no marks were set):** pole run lift
+  4.61, Cover 2 60.6%; late post 16 plays, Cover 1/3 75%, lift 1.30; corner roll-up lift
+  3.18, Cover 2/6 71.4% (3.1 on the old zero).
+- **Read lines (`verify.py bdb --checks shell film_read disguise`):** run-MOF accuracy
+  0.807 / 0.778; film-read middle 0.802 / 0.775 (0.774 / 0.750 at `card-verdict`, both up,
+  each under 2 SE) and deep count 0.419 / 0.420. The disguise check has no hand labels on
+  the holdout weeks (n = 0). The sequence model was not re-scored (`sequence-v1`).
+- **Film.** `verify.py film` before/after the buzz is identical on all 11 clips (8 read);
+  no manifest clip carries a buzz. The film check to capture is SF @ LA 2023 wk 2
+  (2023091709 play 438, Q1 6:41, 1st & 10, Stafford short right to Atwell for 11, Cover 3).
+  The 3701 roll-up play is not in the manifest; its likely capture is the 2026-10-05
+  10-45-27 Dolphins-Chargers file and needs the verify skill's add flow.
+- **Next:** pressure bluffs (2023 only), then the rest of the migration (sequence model on
+  the ball spot, scored once), then push.
+
 
 ## Corner roll-up fitted and registered (2026-10-02)
 

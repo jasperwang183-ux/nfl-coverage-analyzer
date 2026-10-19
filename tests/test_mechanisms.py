@@ -201,7 +201,7 @@ def test_a_safety_buzzing_wide_behind_off_corners_is_cover_3():
     hits = mechanism_hits(defender_phases(play))
     assert hits["mechanism"].tolist() == ["buzz_soft"]
     assert hits.iloc[0]["nfl_id"] == list({**OFFENSE, **OFF}).index("SS") + 1
-    assert hits.iloc[0]["text"].endswith("a buzz, Cover 3")
+    assert hits.iloc[0]["text"].endswith("a buzz, leans Cover 3")
 
 
 @pytest.mark.parametrize(
@@ -224,4 +224,4 @@ def test_the_buzz_leads_the_verdict_over_the_rotation():
     played = played_read(play, 49.5, 26.6, 0.1, [], hit=hits[0])
     shown = structural_read(play[play["rel_frame"] == 0], 49.5, 26.6, 9.0, "snap", [])
     label, text = disguise_verdict("rotate_to_mof_closed", shown, played, hits)
-    assert label == "buzz_soft" and "a buzz, Cover 3" in text
+    assert label == "buzz_soft" and "a buzz, leans Cover 3" in text
