@@ -172,8 +172,69 @@ CORNER_ROLL_UP = Mechanism(
     downhill=True,
 )
 
+# Buzz: a safety deep at the snap comes down wide toward the curl-flat while the corners
+# play off and the other safety ends deep in the middle: Cover 3. Fitted on tuning weeks
+# 1-13 (scripts/fit_mechanism_depths.py, 2026-10-19) by the analyst's rule: from the most
+# precise setting whose seasons agree within 5 pts, loosen an edge while it buys at least
+# 2.5 right calls per wrong one, looking past one short step (3 lands on the same setting),
+# then require 85% (no season under 82%) on 200+ plays with the seasons within 5 pts, and
+# neighbours that also pass. 447 plays, Cover 3 85.7%
+# (84.7 / 86.8). Its sideways speed adds nothing past where he lands, so it is not a
+# condition. Dropped by the same rule (Cover 1 / 3 from the same drop): to the middle
+# hole (press corners 70 stable plays, under the 75 floor; off corners best 68%), and wide
+# with press corners (best 55% on 200+ plays). Those plays keep the rotation line.
+LOW_COMMIT_MAX = -0.5  # yd/s over +0.7-1.2 s: coming toward the LOS
+PARTNER_DEPTH_MIN = 10.0  # yd past the ball at the landmark
+PARTNER_LAT_MAX = 6.0  # yd off the formation center at the landmark
+BUZZ_LAT_MIN = 7.5  # yd off the formation center at the landmark: wide
+BUZZ_DEPTH_MAX = 10.0  # yd past the ball at the landmark: shallow
+BUZZ_SOFT_MIN = 4.0  # yd: the corners' mean depth off the ball at the snap
+
+
+def _corner_cushion(p: pd.DataFrame) -> pd.Series:
+    corners = p["align_depth"].where(p["role"] == "corner")
+    return corners.groupby([p[k] for k in KEYS]).transform("mean")
+
+
+def _partner_deep_middle(p: pd.DataFrame) -> pd.Series:
+    """Another safety of the play is deep in the middle at the landmark."""
+    deep = (
+        (p["role"] == "safety")
+        & (p["landmark_depth"] >= PARTNER_DEPTH_MIN)
+        & (p["landmark_lat"].abs() <= PARTNER_LAT_MAX)
+    ).astype(int)
+    return deep.groupby([p[k] for k in KEYS]).transform("sum") - deep > 0
+
+
+def _buzz(
+    p: pd.DataFrame, lat_min: float = BUZZ_LAT_MIN, soft_min: float = BUZZ_SOFT_MIN
+) -> pd.Series:
+    return (
+        (p["role"] == "safety")
+        & (p["commit_v_depth"] <= LOW_COMMIT_MAX)
+        & (p["landmark_lat"].abs() > lat_min)
+        & (p["landmark_depth"] < BUZZ_DEPTH_MAX)
+        & (_corner_cushion(p) >= soft_min)
+        & _partner_deep_middle(p)
+    )
+
+
+BUZZ_SOFT = Mechanism(
+    name="buzz_soft",
+    kind="coverage",
+    implies=frozenset({"COVER_3_ZONE"}),
+    fires=_buzz,
+    text=lambda r: (
+        f"a safety came down wide to the curl-flat {_speed(r)} with the corners off and the "
+        "other safety deep in the middle: a buzz, Cover 3"
+    ),
+    downhill=True,
+)
+
 # The film path reads only the first coverage hit, so the roll-up goes after the deep runs.
-MECHANISMS: tuple[Mechanism, ...] = (POLE_RUN, LATE_POST, CORNER_ROLL_UP)
+# The buzz never fires with the roll-up or the late post on the tuning weeks, and with the
+# pole run on 2 plays.
+MECHANISMS: tuple[Mechanism, ...] = (POLE_RUN, LATE_POST, CORNER_ROLL_UP, BUZZ_SOFT)
 # Rows written but not yet shown to lift their families on the tuning weeks: the scripts
 # can score them, the page does not run them.
 CANDIDATES: tuple[Mechanism, ...] = ()

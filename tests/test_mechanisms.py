@@ -186,3 +186,42 @@ def test_ball_spots_move_every_depth_and_no_speed():
     assert new["align_depth"] == pytest.approx(old["align_depth"] - 1.0)
     assert new["landmark_depth"] == pytest.approx(old["landmark_depth"] - 1.0)
     assert new["commit_v_depth"] == pytest.approx(old["commit_v_depth"])
+
+
+# Buzz: SS comes down 6 yd in 2 s (-3 yd/s) to the curl-flat, 7.5 yd deep and 13.4 yd wide,
+# while FS drifts to 16.5 yd deep, 1.6 yd off the middle. The corners' mean cushion is 7.5 yd
+# off, or 1.0 yd pressed.
+OFF = {**DEFENSE, "CB1": (57.0, 5.2)}
+PRESSED = {**DEFENSE, "CB2": (50.5, 47.0)}
+BUZZ = {"FS": (66.0, 25.0), "SS": (57.0, 40.0)}
+
+
+def test_a_safety_buzzing_wide_behind_off_corners_is_cover_3():
+    play = _play(1, 1, BUZZ, n_frames=21, base=OFF)
+    hits = mechanism_hits(defender_phases(play))
+    assert hits["mechanism"].tolist() == ["buzz_soft"]
+    assert hits.iloc[0]["nfl_id"] == list({**OFFENSE, **OFF}).index("SS") + 1
+    assert hits.iloc[0]["text"].endswith("a buzz, Cover 3")
+
+
+@pytest.mark.parametrize(
+    ("moves", "base"),
+    [
+        (BUZZ, PRESSED),  # pressed corners: the dropped Cover 1 row, no call
+        ({**BUZZ, "SS": (57.0, 27.0)}, OFF),  # to the middle hole: the dropped robber rows
+        ({**BUZZ, "FS": (66.0, 12.0)}, OFF),  # the other safety holds his half
+    ],
+)
+def test_the_buzz_does_not_fire_on_the_shapes_it_dropped(moves, base):
+    assert mechanism_hits(defender_phases(_play(1, 1, moves, n_frames=21, base=base))).empty
+
+
+def test_the_buzz_leads_the_verdict_over_the_rotation():
+    from nfl_coverage.analysis.report import disguise_verdict, played_read, structural_read
+
+    play = _play(1, 1, BUZZ, n_frames=21, base=OFF)
+    hits = mechanism_hits(defender_phases(play)).to_dict("records")
+    played = played_read(play, 49.5, 26.6, 0.1, [], hit=hits[0])
+    shown = structural_read(play[play["rel_frame"] == 0], 49.5, 26.6, 9.0, "snap", [])
+    label, text = disguise_verdict("rotate_to_mof_closed", shown, played, hits)
+    assert label == "buzz_soft" and "a buzz, Cover 3" in text
