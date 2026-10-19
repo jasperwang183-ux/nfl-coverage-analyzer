@@ -185,6 +185,8 @@ CORNER_ROLL_UP = Mechanism(
 # with press corners (best 55% on 200+ plays). Those plays keep the rotation line.
 # Holdout pass marks, set before it was scored (analyst, 2026-10-19), on the pooled share
 # right when it fires: 82% or more stays strong, 70-82% turns lean, under 70% drops it.
+# Holdout (scored once, 2026-10-19; never re-score): 182 plays, Cover 3 81.3% (80.5 /
+# 82.1), Cover 1 on 26 of them, so the card says it leans.
 LOW_COMMIT_MAX = -0.5  # yd/s over +0.7-1.2 s: coming toward the LOS
 PARTNER_DEPTH_MIN = 10.0  # yd past the ball at the landmark
 PARTNER_LAT_MAX = 6.0  # yd off the formation center at the landmark
@@ -228,7 +230,7 @@ BUZZ_SOFT = Mechanism(
     fires=_buzz,
     text=lambda r: (
         f"a safety came down wide to the curl-flat {_speed(r)} with the corners off and the "
-        "other safety deep in the middle: a buzz, Cover 3"
+        "other safety deep in the middle: a buzz, leans Cover 3"
     ),
     downhill=True,
 )
