@@ -183,6 +183,8 @@ CORNER_ROLL_UP = Mechanism(
 # condition. Dropped by the same rule (Cover 1 / 3 from the same drop): to the middle
 # hole (press corners 70 stable plays, under the 75 floor; off corners best 68%), and wide
 # with press corners (best 55% on 200+ plays). Those plays keep the rotation line.
+# Holdout pass marks, set before it was scored (analyst, 2026-10-19), on the pooled share
+# right when it fires: 82% or more stays strong, 70-82% turns lean, under 70% drops it.
 LOW_COMMIT_MAX = -0.5  # yd/s over +0.7-1.2 s: coming toward the LOS
 PARTNER_DEPTH_MIN = 10.0  # yd past the ball at the landmark
 PARTNER_LAT_MAX = 6.0  # yd off the formation center at the landmark
