@@ -258,9 +258,10 @@ def test_a_mugged_linebacker_who_bails_is_a_front_bluff():
         ({"LB2": (47.5, 28.5)}, MUGGED),  # both mugged, nobody bails: the heat the look shows
         ({"LB2": (57.5, 32.0)}, {**DEFENSE, "LB2": (51.5, 28.5)}),  # only one mugged
         ({"LB2": (57.5, 28.5)}, {**MUGGED, "SS": (63.0, 27.0)}),  # single-high: SS in the post
+        ({"LB2": (57.5, 28.5), "LB1": (47.5, 25.0)}, MUGGED),  # LB1 shoots the gap: a live blitz
     ],
 )
-def test_a_front_bluff_needs_two_mugged_two_high_and_a_bail(moves, base):
+def test_a_front_bluff_needs_two_mugged_two_high_a_bail_and_no_partner_rushing(moves, base):
     assert _pressure_hits(moves, base).empty
 
 

@@ -1,4 +1,29 @@
-# Session Handoff — updated 2026-10-19
+# Session Handoff — updated 2026-10-20
+
+## QA follow-up: front bluff tightened, commit window kept (2026-10-20)
+
+A read-only QA (data, labels, split and every tuning number reproduced independently)
+found latent script bugs and four definition questions. The bugs are fixed with no number
+changed (4af8dfe). Decided so far:
+
+- **Front bluff, partner-rush kill** (`PARTNER_RUSH_MAX` -1 yd/s): another mugged
+  defender coming downhill kills the row: a live blitz that traded gaps, not a bluff.
+  2018 tuning weeks at 4 yd / bail 2: 58 plays, 4 or fewer rush 89.7% (88.6 / 91.3); the
+  82 plays it removed rush 4 or fewer on 72.0% (base 74.3%).
+- **Holdout, with an asterisk.** This row achieved an official blind holdout score of
+  80.4% (51 plays) under the original v1 definition. Post-exam QA refactored the logic to
+  enforce a strict partner-rush kill switch. This refactor isolated an 89.7% precision
+  tell on tuning weeks, shrinking the volume to 58 plays. The historic 80.4% holdout score
+  remains as a validated baseline for the structural shape, but carries an asterisk as it
+  does not map 1:1 to this post-QA tightened rule. Weeks 14-17 are never re-scored.
+- **Elite precision exception** in `scripts/fit_mechanism_depths.py`: a pressure row 88%+
+  precise on the tuning weeks needs 50 plays instead of 75. 4 yd / bail 2 passes it, and
+  the row stays there by the analyst's call; the walk still stops at 4 yd / bail 0 (86
+  plays, 86.0%, gap 5.4) and prints "dropped". Open: whether the walk should change.
+- **Commit window** (+0.7-1.2 s) keeps running past a quick throw (9 second-level plays).
+- **Open:** (1) the bluff's two-high test counts corners 9-12 yd deep where the page needs
+  12 (strict xfail test in `tests/test_mechanisms.py`); (4) the buzz fires on small
+  movements (8 of 25 safeties on 2018 w5 lost under 2 yd).
 
 ## Pressure bluffs fitted and scored on the 2018 holdout (2026-10-19)
 
