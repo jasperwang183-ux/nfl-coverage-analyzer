@@ -247,7 +247,8 @@ BUZZ_SOFT = Mechanism(
 # (scripts/fit_mechanism_depths.py, 2026-10-19), weeks 1-7 vs 8-13 standing in for two
 # seasons:
 # - Front bluff: two or more LBs or DBs mugged within BLUFF_LAT_MAX of the ball (inside
-#   the tackles: the A and B gaps), two high at the snap, and one of them bails. 140 plays,
+#   the tackles: the A and B gaps), two high at the snap, and one of them bails (before
+#   the QA's partner-rush kill, below). 140 plays,
 #   4 or fewer rush 79.3% (80.2 / 77.6), strong against the analyst's 75% floor; the look
 #   alone rushes 4 or fewer on 68.9% (334), and the same look and bail from single-high on
 #   74.4% (195). Widening to 6 yd took 340 plays at 76.2%, but there a two-high mugged look
@@ -261,10 +262,27 @@ BUZZ_SOFT = Mechanism(
 # Holdout (2018 weeks 14-17, scored once, 2026-10-19; never re-score): front bluff 51
 # plays, 4 or fewer rush 80.4% (base 71.8%); second-level rusher 167 plays, 5 or more
 # rush 77.2% (base 28.2%). Both stay strong.
+# Front bluff after the QA (analyst, 2026-10-20): this row achieved an official blind
+# holdout score of 80.4% (51 plays) under the original v1 definition. Post-exam QA
+# refactored the logic to enforce a strict partner-rush kill switch (PARTNER_RUSH_MAX: any
+# other mugged defender coming downhill faster than 1 yd/s kills the row). This refactor
+# isolated an 89.7% precision tell on tuning weeks (88.6 / 91.3), shrinking the volume to
+# 58 plays. The historic 80.4% holdout score remains as a validated baseline for the
+# structural shape, but carries an asterisk as it does not map 1:1 to this post-QA
+# tightened rule. Kept at 4 yd / bail 2 by the analyst: that setting passes the elite
+# precision exception (88%+ on the tuning weeks needs 50 plays, not 75;
+# scripts/fit_mechanism_depths.py) with seasons 2.7 pts apart and a passing neighbour
+# (3.5 yd: 57 plays, 89.5%). The walk itself does not stop there: it loosens to bail 0
+# (86 plays, 86.0%, 88.2 / 82.9) and drops it on the 5-pt gap.
 SECOND_LEVEL = frozenset({"OLB", "ILB", "MLB", "LB", "CB", "SS", "FS", "DB", "S"})
 PRESSURE_DATASET = "bdb2021"  # the one season with a rush count to fit and score on
 BLUFF_LAT_MAX = 4.0  # yd off the formation center at the snap: inside the tackles
 BAIL_MIN = 2.0  # yd/s over +0.7-1.2 s away from the LOS
+# yd/s over +0.7-1.2 s: a mugged partner coming toward the LOS faster than this is rushing,
+# and kills the bluff (a live blitz that traded gaps, not a look dissolving into coverage).
+# Partners split cleanly on the tuning weeks: downhill ones mostly at -2 to -4 yd/s, the
+# rest bail or hold, so the line anywhere in -1..0 keeps the same plays (56-58 of 140).
+PARTNER_RUSH_MAX = -1.0
 RUSH_LAT_MAX = 3.0  # yd off the formation center at the snap: nobody mugged in here
 RUSH_DOWNHILL_MAX = -4.5  # yd/s over +0.7-1.2 s toward the LOS
 
@@ -293,14 +311,22 @@ def _two_high(p: pd.DataFrame) -> pd.Series:
 
 
 def _front_bluff(
-    p: pd.DataFrame, lat_max: float = BLUFF_LAT_MAX, bail_min: float = BAIL_MIN
+    p: pd.DataFrame,
+    lat_max: float = BLUFF_LAT_MAX,
+    bail_min: float = BAIL_MIN,
+    partner_max: float = PARTNER_RUSH_MAX,
 ) -> pd.Series:
-    """A mugged LB or DB who bails, with two or more mugged and two high at the snap."""
+    """A mugged LB or DB who bails, with two or more mugged, two high at the snap, and no
+    other mugged defender coming downhill."""
+    mugged = _mugged(p, lat_max)
+    # the bailer himself is never counted: he moves away from the LOS (bail_min >= 0)
+    rushing = (mugged & (p["commit_v_depth"] < partner_max)).astype(int)
     return (
         (p["dataset"] == PRESSURE_DATASET)
-        & _mugged(p, lat_max)
+        & mugged
         & (p["commit_v_depth"] > bail_min)
         & (_n_mugged(p, lat_max) >= 2)
+        & (rushing.groupby([p[k] for k in KEYS]).transform("sum") == 0)
         & _two_high(p)
     )
 
@@ -324,9 +350,9 @@ FRONT_BLUFF = Mechanism(
     implies=frozenset({"RUSH_LE4"}),
     fires=_front_bluff,
     text=lambda r: (
-        f"from two high, two or more LBs or DBs were mugged at the line and a {r['position']} "
-        "bailed "
-        f"({r['commit_v_depth']:.1f} yd/s by +1.2 s): an A-gap bluff, likely 4 or fewer rush"
+        f"from two high, two or more LBs or DBs were mugged at the line, a {r['position']} "
+        f"bailed ({r['commit_v_depth']:.1f} yd/s by +1.2 s) and none came downhill: an A-gap "
+        "bluff, likely 4 or fewer rush"
     ),
 )
 

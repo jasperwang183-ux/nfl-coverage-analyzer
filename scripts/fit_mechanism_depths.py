@@ -24,7 +24,9 @@ level's precision. One short step is looked past: the walk stops only when two s
 row fall short. The stop is strong if it has the row's play floor, the strong precision
 (no season more than SEASON_SLACK under it), seasons within STABLE_GAP, and a neighbouring
 setting that passes too; else the walk reruns on the lean precision; else the row is
-dropped.
+dropped. Elite precision exception (analyst, 2026-10-20): a row with an "elite" entry
+whose setting is at least ELITE_PREC precise on the tuning weeks needs only
+ELITE_MIN_PLAYS plays instead of its floor; the other checks stay.
 
 The pressure rows score against the 2018 rush count (`plays.numberOfPassRushers`: 4 or
 fewer, or 5 or more) instead of the coverage label, on 2018 only, with weeks 1-7 and 8-13
@@ -69,6 +71,10 @@ CACHE = DATA_PROCESSED / "phases_tuning_ball.parquet"
 DATASETS = ("bdb2021", "bdb2026")
 STABLE_GAP = 5.0  # points between the seasons' precision
 SEASON_SLACK = 3.0  # points a season may sit under the pooled floor
+# The elite precision exception: this precise on the tuning weeks, this many plays suffice
+ELITE_PREC = 88.0
+ELITE_MIN_PLAYS = 50
+ELITE = {"elite": (ELITE_PREC, ELITE_MIN_PLAYS)}
 # Pressure rows score on 2018 only, so the two halves of its tuning weeks stand in for the
 # two seasons.
 BLOCKS = ("w1-7", "w8-13")
@@ -102,14 +108,14 @@ SWEEPS = {
         "grid": {"lat_max": halves(2.0, 4.0), "bail_min": halves(0.0, 3.0)},
         "fires": lambda p, lat_max, bail_min: _front_bluff(p, lat_max, bail_min),
         "implies": FRONT_BLUFF.implies,
-        "walk": {"strong": 75.0, "lean": 65.0, "min_plays": 75},
+        "walk": {"strong": 75.0, "lean": 65.0, "min_plays": 75, **ELITE},
         **RUSH,
     },
     "second_level_rush": {
         "grid": {"lat_max": halves(2.0, 4.0), "downhill_max": halves(-6.0, -2.0)},
         "fires": lambda p, lat_max, downhill_max: _second_level_rush(p, lat_max, downhill_max),
         "implies": SECOND_LEVEL_RUSH.implies,
-        "walk": {"strong": 70.0, "lean": 60.0, "min_plays": 75},
+        "walk": {"strong": 70.0, "lean": 60.0, "min_plays": 75, **ELITE},
         **RUSH,
     },
 }
@@ -250,8 +256,12 @@ def walk_pick(
         if at is None:
             return None, "dropped"
         near = (t[settings] - t.loc[at, settings]).abs().sum(axis=1) == 0.5
+        elite_prec, elite_plays = floors.get("elite", (np.inf, np.inf))
+        enough = (t["n"] >= floors["min_plays"]) | (
+            (t["n"] >= elite_plays) & (t["prec"] >= elite_prec)
+        )
         ok = (
-            (t["n"] >= floors["min_plays"])
+            enough
             & (t["prec"] >= floors[level])
             & (worst >= floors[level] - floors.get("slack", np.inf))
             & (t["gap"] <= STABLE_GAP)

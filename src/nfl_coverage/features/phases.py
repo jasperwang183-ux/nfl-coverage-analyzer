@@ -23,6 +23,11 @@ from nfl_coverage.features.alignment import KEYS, snap_los
 
 FIRST_STEPS = (0.3, 0.7)  # s after the snap
 COMMIT = (0.7, 1.2)  # s: a disguise is decided by here (a spin is done by ~0.5 s)
+# The commit window is not cut at the throw (analyst, 2026-10-20): on a quick throw before
+# +1.2 s it still runs to +1.2 s, read as the defender's assignment, so a quick-game play
+# keeps its trigger instead of going unreadable. 9 second-level-rush plays on the 2018
+# tuning weeks have the throw inside the window. The landmark, by contrast, stops at the
+# throw (LANDMARK_CAP_S or the release, whichever is first).
 LANDMARK_CAP_S = 2.0
 FIRST_MOVE_YD = 1.0  # displacement from the snap spot that counts as moving
 
