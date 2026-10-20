@@ -1,5 +1,38 @@
 # Session Handoff — updated 2026-10-19
 
+## Pressure bluffs fitted and scored on the 2018 holdout (2026-10-19)
+
+Two `kind="pressure"` rows in `analysis/mechanisms.py`, scored against
+`plays.numberOfPassRushers` instead of a coverage label (8366d63). **2018 only:** 2023
+tracking carries no pass rushers and no rush count, 2018 tracks LBs and DBs but almost no
+linemen, and film has no positions, so neither row fires on clips. Their card text shows
+under "In the first second"; `disguise_verdict` still leads with coverage hits only.
+
+- **front_bluff**: from two high (the snap-shell open-middle rule), two or more LBs or
+  DBs mugged within 4 yd of the ball (inside the tackles), and one bails faster than
+  2 yd/s by +1.2 s: "an A-gap bluff, likely 4 or fewer rush". Tuning weeks 1-13: 140
+  plays, 79.3% (weeks 1-7 / 8-13: 80.2 / 77.6); the look alone is 68.9%. The 6 yd width
+  the walk preferred (340 plays, 76.2%) was rejected: there the look without a bail is
+  already 73.2%.
+- **second_level_rush**: nobody mugged within 3 yd, and an off-ball LB or DB comes
+  downhill faster than 4.5 yd/s: "a second-level rusher, likely 5+ rush". 551 plays,
+  73.7% (75.2 / 71.4). Its misses are most likely sims (a lineman drops), which 2018
+  cannot see.
+- **Holdout (2018 weeks 14-17, scored once; never re-score)**, against marks committed
+  before scoring (72 / 60 and 67 / 55): front_bluff 51 plays, 80.4% (base 71.8%);
+  second_level_rush 167 plays, 77.2% (base 28.2%). Both strong. Output in
+  `data/verify/holdout/pressure_2026-10-19.txt`. The page's own shown read calls 11 of the
+  51 bluff plays MOF closed, so the two two-high tests differ at the edges.
+- **Plumbing:** `data/context.py` adds `number_of_pass_rushers`; phases carry `position`;
+  `fit_mechanism_depths.py` and `check_mechanisms.py` score pressure rows on the rush
+  count, with week blocks in place of seasons. `verify.py film` is unchanged on all clips.
+- **Not built:** the compound verdict the analyst chose ("A-gap bluff / Cover 3", a
+  pressure hit leading the disguise line). It cannot show on a clip until film fires
+  these rows, so where it lands (v1 or v2) is the analyst's call.
+- **Next for v1:** retrain the sequence model on the ball spot and score it once, then
+  push. Film-side pressure (positions, linemen kept) is v2.
+
+
 ## Ball-spot migration and the buzz scored on the holdout (2026-10-19)
 
 Units A-D moved every depth from the stand-in LOS to the ball spot (7346123, e5bc0a2,

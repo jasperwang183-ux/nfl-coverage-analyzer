@@ -256,6 +256,9 @@ BUZZ_SOFT = Mechanism(
 # Holdout pass marks, set before it was scored (analyst, 2026-10-19), on the share right
 # when it fires, 3 points under each tuning floor: front bluff 72% or more strong, 60-72%
 # lean, under 60% dropped; second-level rusher 67% strong, 55-67% lean, under 55% dropped.
+# Holdout (2018 weeks 14-17, scored once, 2026-10-19; never re-score): front bluff 51
+# plays, 4 or fewer rush 80.4% (base 71.8%); second-level rusher 167 plays, 5 or more
+# rush 77.2% (base 28.2%). Both stay strong.
 SECOND_LEVEL = frozenset({"OLB", "ILB", "MLB", "LB", "CB", "SS", "FS", "DB", "S"})
 BLUFF_LAT_MAX = 4.0  # yd off the formation center at the snap: inside the tackles
 BAIL_MIN = 2.0  # yd/s over +0.7-1.2 s away from the LOS
