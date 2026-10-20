@@ -1,5 +1,34 @@
 # Session Handoff — updated 2026-10-20
 
+## QA follow-up: two-high on the page's line, commit window stops at the throw (2026-10-20)
+
+Two more QA definitions, decided after the section below was committed (691da94):
+
+- **Two-high** (`mechanisms._two_high`) now reads deep as the page does: the widest
+  defender per side only past `report.CORNER_DEEP_DEPTH` (12 yd), everyone else past 9.
+  The off-corner test that was a strict xfail now passes.
+- **Commit window stops at the throw** (`features.phases`, reverses the "keeps running"
+  note below): after the ball is out a defender's speed is chase, not assignment. A window
+  cut under `COMMIT_MIN_S` (0.2 s) has no commit speed. The throw lands inside +0.7-1.2 s
+  on 384 of 23,121 tuning plays (37 by +0.7 s). **Film has no release time**, so clips
+  keep the full window: a training/serving gap to close when film estimates the throw.
+- **Refit** (cache rebuilt, tuning weeks 1-13): front bluff at 4 yd / bail 2 is 53 plays,
+  88.7% (87.1 / 90.9), still past the elite exception (neighbour 3.5 yd: 52, 88.5%); the
+  walk stops at 4 yd / bail 0 (77, 85.7%, gap 7.6) and prints "dropped". Second-level
+  rusher 549 plays, 74.3% (76.1 / 71.7), strong. Buzz unchanged (447, 85.7%); pole run
+  pick unchanged (12; the row keeps 10). The roll-up's plateau pick moves 8 -> 8.5 yd
+  landmark (plateau 6.5-10 yd); its constant stays 8 (287 plays, 78.7%, lift 4.03 / 3.70).
+- **Holdouts.** Every 2026-10-19 holdout score was computed with the old window and, for
+  the bluff, the old two-high test. Not re-scored.
+- **Film** `verify.py film` identical before and after (8/11). pytest 247 passed.
+- **Front bluff is configured, not walked** (analyst): fixed at 4 yd / bail 2. A "plateau
+  cap" on the walk was rejected: it would lock at 3 yd / bail 2.5 (41 plays, under the
+  50-play exception) and drop the row, and any rule built to land on 4 / 2 fits backwards.
+- **Corner roll-up stays at 8 yd** (analyst): the 8.5 pick is a wobble in a flat 6.5-10
+  yd plateau.
+- **No buzz movement floor** (analyst): the 128 of 447 buzz plays that lose under 2 yd of
+  depth are Cover 3 on 84.4%, vs 86.2% for the rest.
+
 ## QA follow-up: front bluff tightened, commit window kept (2026-10-20)
 
 A read-only QA (data, labels, split and every tuning number reproduced independently)

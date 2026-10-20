@@ -28,13 +28,27 @@ def test_phases_read_the_trigger_and_the_landmark():
     assert m["first_move_t"] == pytest.approx(0.4)  # 1 yd of a 6.1 yd path at 20 frames
 
 
-def test_the_landmark_stops_at_the_throw():
-    releases = pd.DataFrame(
-        {"dataset": ["test"], "game_id": [1], "play_id": [1], "release_rel_frame": [12.0]}
+def _release(rel_frame):
+    return pd.DataFrame(
+        {"dataset": ["test"], "game_id": [1], "play_id": [1], "release_rel_frame": [rel_frame]}
     )
-    m = _mike(defender_phases(_play(1, 1, POLE, n_frames=21, base=TAMPA), releases))
+
+
+def test_the_landmark_stops_at_the_throw():
+    m = _mike(defender_phases(_play(1, 1, POLE, n_frames=21, base=TAMPA), _release(12.0)))
     assert m["landmark_t"] == pytest.approx(1.2)
     assert m["landmark_depth"] == pytest.approx(5.5 + 6.0 * 12 / 20)
+
+
+def test_the_commit_window_stops_at_the_throw():
+    play = _play(1, 1, POLE, n_frames=21, base=TAMPA)
+    mike = play["nfl_id"] == list({**OFFENSE, **TAMPA}).index("MIKE") + 1
+    at_throw = play.loc[mike & (play["rel_frame"] == 10), "x"].iloc[0]
+    play.loc[mike & (play["rel_frame"] > 10), "x"] = at_throw - 2.0  # breaks on the ball
+    assert _mike(defender_phases(play))["commit_v_depth"] < 0  # no release: the chase counts
+    assert _mike(defender_phases(play, _release(10.0)))["commit_v_depth"] == pytest.approx(3.0)
+    # thrown at +0.8 s: 0.1 s of window is too short to read
+    assert np.isnan(_mike(defender_phases(play, _release(8.0)))["commit_v_depth"])
 
 
 def test_a_play_too_short_for_the_commit_window_has_no_trigger():
@@ -296,11 +310,6 @@ def test_pressure_rows_stay_off_2023_which_has_no_rush_count(moves, base):
 OFF_CORNER_SINGLE_HIGH = {**MUGGED, "FS": (68.5, 31.6), "CB2": (59.0, 47.0), "SS": (55.0, 35.0)}
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA 2026-10-20: _two_high counts corners 9-12 yd deep; the page needs 12 for the "
-    "widest defender, so it calls this two-high. Open definition question.",
-)
 def test_the_bluffs_two_high_agrees_with_the_shown_read_on_an_off_corner():
     from nfl_coverage.analysis.report import structural_read
 
