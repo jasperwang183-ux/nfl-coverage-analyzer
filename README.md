@@ -6,7 +6,7 @@ A computer vision + machine learning system that analyzes NFL footage and tracki
 
 ```
                  ┌──────────────────────────────────────────────────────────┐
-  mp4 / still ─► │ frame sampling ─► auto-calibration from the painted        │
+  mp4 / still ─► │ frame sampling ─► auto-calibration from the painted       │
                  │ markings (yard lines, hashes, sidelines, numbers)         │
                  │ ─► YOLO + ByteTrack ─► foot points through the homography │ ─► field-space (x, y)
                  │ (calibration chained frame to frame as the camera pans)   │     tracks at 10 Hz
@@ -33,12 +33,12 @@ A computer vision + machine learning system that analyzes NFL footage and tracki
           │                                                            │
           └────────────────────────────┬───────────────────────────────┘
                                        ▼
-                 ┌──────────────────────────────────────────────────────────┐
-                 │ Disguise components (shell rotation, model disagreement; │
+                 ┌───────────────────────────────────────────────────────────┐
+                 │ Disguise components (shell rotation, model disagreement;  │
                  │ corner technique / pressure bluff / man-zone mask planned)│
-                 │ + evaluation harness: label-implied shell accuracy,      │
-                 │ rates by defense/down/distance, film confirmations       │
-                 └──────────────────────────────────────────────────────────┘
+                 │ + evaluation harness: label-implied shell accuracy,       │
+                 │ rates by defense/down/distance, film confirmations        │
+                 └───────────────────────────────────────────────────────────┘
                                        ▼
                  CoverageReport: structure + its confidence, family,
                  model variant + its confidence, disguise verdict, reasons
