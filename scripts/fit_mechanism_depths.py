@@ -104,6 +104,8 @@ SWEEPS = {
         "implies": BUZZ_SOFT.implies,
         "walk": {"strong": 85.0, "lean": 70.0, "min_plays": 200, "slack": SEASON_SLACK},
     },
+    # Configured, not walked (analyst, 2026-10-20): the row is fixed at 4 yd / bail 2, which
+    # passes the elite exception; the walk below still runs, and its verdict is for reference.
     "front_bluff": {
         "grid": {"lat_max": halves(2.0, 4.0), "bail_min": halves(0.0, 3.0)},
         "fires": lambda p, lat_max, bail_min: _front_bluff(p, lat_max, bail_min),

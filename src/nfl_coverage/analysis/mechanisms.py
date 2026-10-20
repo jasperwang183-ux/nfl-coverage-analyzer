@@ -16,8 +16,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
+import numpy as np
 import pandas as pd
 
+from nfl_coverage.analysis.report import CORNER_DEEP_DEPTH
 from nfl_coverage.analysis.roles import LINE_DEPTH
 from nfl_coverage.analysis.shell import DEEP_DEPTH, MOF_HALFWIDTH, MOF_PARTNER_MIN
 from nfl_coverage.features.alignment import KEYS
@@ -255,7 +257,8 @@ BUZZ_SOFT = Mechanism(
 #   where nobody bails is already 73.2%, so the analyst kept the tackles (2026-10-19).
 # - Second-level rusher: nobody mugged within RUSH_LAT_MAX and an off-ball LB or DB comes
 #   downhill. 551 plays, 5 or more rush 73.7% (75.2 / 71.4), strong against 70%. The rest
-#   are most likely a lineman dropping out (a sim), which 2018 cannot see.
+#   are most likely a lineman dropping out (a sim), which 2018 cannot see. With the commit
+#   window stopping at the throw (2026-10-20): 549 plays, 74.3% (76.1 / 71.7), still strong.
 # Holdout pass marks, set before it was scored (analyst, 2026-10-19), on the share right
 # when it fires, 3 points under each tuning floor: front bluff 72% or more strong, 60-72%
 # lean, under 60% dropped; second-level rusher 67% strong, 55-67% lean, under 55% dropped.
@@ -269,11 +272,14 @@ BUZZ_SOFT = Mechanism(
 # isolated an 89.7% precision tell on tuning weeks (88.6 / 91.3), shrinking the volume to
 # 58 plays. The historic 80.4% holdout score remains as a validated baseline for the
 # structural shape, but carries an asterisk as it does not map 1:1 to this post-QA
-# tightened rule. Kept at 4 yd / bail 2 by the analyst: that setting passes the elite
-# precision exception (88%+ on the tuning weeks needs 50 plays, not 75;
-# scripts/fit_mechanism_depths.py) with seasons 2.7 pts apart and a passing neighbour
-# (3.5 yd: 57 plays, 89.5%). The walk itself does not stop there: it loosens to bail 0
-# (86 plays, 86.0%, 88.2 / 82.9) and drops it on the 5-pt gap.
+# tightened rule.
+# Then the two-high test moved to the page's 12 yd line for the widest defender, and the
+# commit window to stop at the throw (both 2026-10-20). At 4 yd / bail 2 the row now fires
+# on 53 plays, 4 or fewer rush 88.7% (87.1 / 90.9). Kept there by the analyst: it passes
+# the elite precision exception (88%+ on the tuning weeks needs 50 plays, not 75;
+# scripts/fit_mechanism_depths.py) with the halves 3.8 pts apart and a passing neighbour
+# (3.5 yd: 52 plays, 88.5%). The walk itself does not stop there: it loosens to bail 0
+# (77 plays, 85.7%, 88.9 / 81.2) and drops it on the 5-pt gap.
 SECOND_LEVEL = frozenset({"OLB", "ILB", "MLB", "LB", "CB", "SS", "FS", "DB", "S"})
 PRESSURE_DATASET = "bdb2021"  # the one season with a rush count to fit and score on
 BLUFF_LAT_MAX = 4.0  # yd off the formation center at the snap: inside the tackles
@@ -281,7 +287,8 @@ BAIL_MIN = 2.0  # yd/s over +0.7-1.2 s away from the LOS
 # yd/s over +0.7-1.2 s: a mugged partner coming toward the LOS faster than this is rushing,
 # and kills the bluff (a live blitz that traded gaps, not a look dissolving into coverage).
 # Partners split cleanly on the tuning weeks: downhill ones mostly at -2 to -4 yd/s, the
-# rest bail or hold, so the line anywhere in -1..0 keeps the same plays (56-58 of 140).
+# rest bail or hold, so the line anywhere in -1..0 kept the same plays (56-58 of 140,
+# before the two-high and throw changes).
 PARTNER_RUSH_MAX = -1.0
 RUSH_LAT_MAX = 3.0  # yd off the formation center at the snap: nobody mugged in here
 RUSH_DOWNHILL_MAX = -4.5  # yd/s over +0.7-1.2 s toward the LOS
@@ -300,9 +307,20 @@ def _n_mugged(p: pd.DataFrame, lat_max: float) -> pd.Series:
 
 
 def _two_high(p: pd.DataFrame) -> pd.Series:
-    """Two or more deep at the snap with the middle open (`shell.mof_is_closed`, per play)."""
+    """Two or more deep at the snap with the middle open (`shell.mof_is_closed`, per play).
+
+    Deep as the page reads it (`report.structural_read`): the widest defender on each side
+    is deep only past CORNER_DEEP_DEPTH (an off corner at 9-11 yd is technique, not a deep
+    third), everyone else past DEEP_DEPTH. Before the QA (2026-10-20) corners counted at 9,
+    so a single-high look with an off corner read two-high here and single-high on the page.
+    """
     keys = [p[k] for k in KEYS]
-    off = p["align_lat"].abs().where(p["align_depth"] >= DEEP_DEPTH)
+    lat = p["align_lat"]
+    widest = (lat == lat.groupby(keys).transform("min")) | (
+        lat == lat.groupby(keys).transform("max")
+    )
+    line = np.where(widest, max(DEEP_DEPTH, CORNER_DEEP_DEPTH), DEEP_DEPTH)
+    off = lat.abs().where(p["align_depth"] >= line)
     rank = off.groupby(keys).rank(method="first")
     nearest = off.where(rank == 1).groupby(keys).transform("max")
     partner = off.where(rank == 2).groupby(keys).transform("max")

@@ -23,11 +23,12 @@ from nfl_coverage.features.alignment import KEYS, snap_los
 
 FIRST_STEPS = (0.3, 0.7)  # s after the snap
 COMMIT = (0.7, 1.2)  # s: a disguise is decided by here (a spin is done by ~0.5 s)
-# The commit window is not cut at the throw (analyst, 2026-10-20): on a quick throw before
-# +1.2 s it still runs to +1.2 s, read as the defender's assignment, so a quick-game play
-# keeps its trigger instead of going unreadable. 9 second-level-rush plays on the 2018
-# tuning weeks have the throw inside the window. The landmark, by contrast, stops at the
-# throw (LANDMARK_CAP_S or the release, whichever is first).
+# The commit window stops at the throw (analyst, 2026-10-20), as the landmark does: after
+# the ball is out a defender breaks on it, so his speed is chase, not his assignment. A
+# window cut shorter than COMMIT_MIN_S has no commit speed (two 10 Hz frames are mostly
+# noise). Tuning weeks: the throw lands inside +0.7-1.2 s on 384 of 23,121 plays (37 by
+# +0.7 s). Film carries no release, so on clips the window still runs to +1.2 s.
+COMMIT_MIN_S = 0.2
 LANDMARK_CAP_S = 2.0
 FIRST_MOVE_YD = 1.0  # displacement from the snap spot that counts as moving
 
@@ -100,11 +101,26 @@ def defender_phases(
         columns={"depth": "align_depth", "lateral": "align_lat"}
     )
     out["position"] = d[d["rel_frame"] == 0].set_index(KEYS + ["nfl_id"])["position"]
-    for name, (a, b) in (("first", FIRST_STEPS), ("commit", COMMIT)):
-        pa, pb = _at(d, f(a), "a"), _at(d, f(b), "b")
-        both = pa.join(pb, how="inner")
-        out[f"{name}_v_depth"] = (both["b_depth"] - both["a_depth"]) / (b - a)
-        out[f"{name}_v_lat"] = (both["b_lat"] - both["a_lat"]) / (b - a)
+    rel = releases.set_index(KEYS)["release_rel_frame"] if releases is not None else None
+    a, b = FIRST_STEPS
+    both = _at(d, f(a), "a").join(_at(d, f(b), "b"), how="inner")
+    out["first_v_depth"] = (both["b_depth"] - both["a_depth"]) / (b - a)
+    out["first_v_lat"] = (both["b_lat"] - both["a_lat"]) / (b - a)
+
+    # the commit window ends at +1.2 s or the throw, whichever is first
+    a, b = COMMIT
+    plays = d.groupby(KEYS).size().index
+    end = pd.Series(f(b), index=plays, name="end_rf")
+    if rel is not None:
+        r = rel.reindex(plays)
+        end = end.where(r.isna() | (r >= end), r).astype(int)
+    end = end[end - f(a) >= f(COMMIT_MIN_S)]
+    at_end = d.join(end, on=KEYS, how="inner")
+    at_end = at_end[at_end["rel_frame"] == at_end["end_rf"]].set_index(KEYS + ["nfl_id"])
+    both = _at(d, f(a), "a").join(at_end[["depth", "lat", "end_rf"]].add_prefix("b_"), how="inner")
+    dt = (both["b_end_rf"] - f(a)) * step
+    out["commit_v_depth"] = (both["b_depth"] - both["a_depth"]) / dt
+    out["commit_v_lat"] = (both["b_lat"] - both["a_lat"]) / dt
 
     start = d[d["rel_frame"] == 0].set_index(KEYS + ["nfl_id"])[["x", "y"]]
     moved = d.join(start, on=KEYS + ["nfl_id"], rsuffix="_0")
@@ -113,9 +129,9 @@ def defender_phases(
 
     last = d.groupby(KEYS)["rel_frame"].max().rename("last")
     cap = last.clip(upper=f(LANDMARK_CAP_S))
-    if releases is not None:
-        rel = releases.set_index(KEYS)["release_rel_frame"].reindex(cap.index)
-        cap = cap.where(rel.isna() | (rel >= cap), rel).astype(int)
+    if rel is not None:
+        r = rel.reindex(cap.index)
+        cap = cap.where(r.isna() | (r >= cap), r).astype(int)
     land = d.join(cap.rename("landmark_rf"), on=KEYS)
     land = land[land["rel_frame"] == land["landmark_rf"]].set_index(KEYS + ["nfl_id"])
     out["landmark_t"] = land["rel_frame"] * step
