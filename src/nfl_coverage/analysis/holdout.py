@@ -52,7 +52,8 @@ FEATURES_PATH = DATA_PROCESSED / "features.parquet"
 
 # Frozen. Tune on anything else; these weeks only ever score a change.
 HOLDOUT = {"bdb2021": [14, 15, 16, 17], "bdb2026": [14, 15, 16, 17, 18]}
-# Where first-second mechanisms are fitted (`scripts/check_mechanisms.py`).
+# Where `scripts/check_mechanisms.py` audits the first-second mechanisms. Their thresholds
+# are fitted on every week outside HOLDOUT (`tuning_weeks`, weeks 1-13).
 TUNING = {"bdb2021": [1, 2, 3, 4], "bdb2026": [1, 2, 3, 4]}
 
 MIN_CLASS = 100  # the variant model drops rarer classes (PREVENT), as train_still_model does

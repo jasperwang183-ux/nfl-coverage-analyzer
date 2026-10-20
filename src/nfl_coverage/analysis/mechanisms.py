@@ -5,8 +5,9 @@ trigger and landmark must look like (`features.phases`), which coverage families
 points to, and how to say it on a card. `mechanism_hits` runs every row over a phases
 table; `mechanism_component` turns the hits into the harness's component shape.
 
-Thresholds are fitted on tuning weeks (2018 and 2023 weeks 1-4) against the coverage
-labels, never taken from articles; each row records what it bought there.
+Thresholds are fitted on tuning weeks (2018 and 2023 weeks 1-13, every week outside the
+holdout) against the coverage labels, never taken from articles; each row records what it
+bought there.
 """
 
 from __future__ import annotations
@@ -240,7 +241,8 @@ BUZZ_SOFT = Mechanism(
 # Pressure: who rushes, not the coverage. A pressure row points to the rush count
 # (RUSH_LE4 / RUSH_GE5, from plays.numberOfPassRushers), which only 2018 has: 2023
 # tracking carries no rushers. 2018 tracks linebackers and DBs but almost no linemen,
-# and film has no positions, so these rows fire on 2018 tracking only. Fitted on 2018
+# and film has no positions. 2023 tracking does carry positions, so the rows are gated to
+# PRESSURE_DATASET: they fire on 2018 tracking only, where they were fitted. Fitted on 2018
 # tuning weeks 1-13 (13,058 plays; 74% rush 4 or fewer) by the analyst's walk
 # (scripts/fit_mechanism_depths.py, 2026-10-19), weeks 1-7 vs 8-13 standing in for two
 # seasons:
@@ -260,6 +262,7 @@ BUZZ_SOFT = Mechanism(
 # plays, 4 or fewer rush 80.4% (base 71.8%); second-level rusher 167 plays, 5 or more
 # rush 77.2% (base 28.2%). Both stay strong.
 SECOND_LEVEL = frozenset({"OLB", "ILB", "MLB", "LB", "CB", "SS", "FS", "DB", "S"})
+PRESSURE_DATASET = "bdb2021"  # the one season with a rush count to fit and score on
 BLUFF_LAT_MAX = 4.0  # yd off the formation center at the snap: inside the tackles
 BAIL_MIN = 2.0  # yd/s over +0.7-1.2 s away from the LOS
 RUSH_LAT_MAX = 3.0  # yd off the formation center at the snap: nobody mugged in here
@@ -294,7 +297,8 @@ def _front_bluff(
 ) -> pd.Series:
     """A mugged LB or DB who bails, with two or more mugged and two high at the snap."""
     return (
-        _mugged(p, lat_max)
+        (p["dataset"] == PRESSURE_DATASET)
+        & _mugged(p, lat_max)
         & (p["commit_v_depth"] > bail_min)
         & (_n_mugged(p, lat_max) >= 2)
         & _two_high(p)
@@ -306,7 +310,8 @@ def _second_level_rush(
 ) -> pd.Series:
     """An off-ball LB or DB who comes downhill fast, with nobody mugged at the snap."""
     return (
-        p["position"].isin(SECOND_LEVEL)
+        (p["dataset"] == PRESSURE_DATASET)
+        & p["position"].isin(SECOND_LEVEL)
         & (p["align_depth"] >= LINE_DEPTH)
         & (p["commit_v_depth"] < downhill_max)
         & (_n_mugged(p, lat_max) == 0)

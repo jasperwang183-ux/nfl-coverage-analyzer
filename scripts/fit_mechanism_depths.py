@@ -179,17 +179,19 @@ def score(phases: pd.DataFrame, name: str, min_n: int) -> pd.DataFrame:
     return t[t["n"] >= min_n].reset_index(drop=True)
 
 
-def pick(t: pd.DataFrame, settings: list[str]) -> tuple[pd.Series, str]:
+def pick(
+    t: pd.DataFrame, settings: list[str], groups: tuple[str, ...] = DATASETS
+) -> tuple[pd.Series, str]:
     plateau = pd.Series(True, index=t.index)
     loss = pd.Series(0.0, index=t.index)
-    for ds in DATASETS:
+    for ds in groups:
         lift = t[f"{ds} lift"]
         best = lift.idxmax()
         plateau &= lift[best] - lift < 2 * t.loc[best, f"{ds} se"]
-        loss = loss.combine(lift[best] - lift, max)
+        loss = np.maximum(loss, lift[best] - lift)  # NaN (a group with no plays) stays NaN
     inside = t[plateau]
     if inside.empty:
-        return t.loc[loss.idxmin()], "no plateau: smallest worst-case loss"
+        return t.loc[loss.dropna().idxmin()], "no plateau: smallest worst-case loss"
     median = inside[settings].median()
     spread = (inside[settings].max() - inside[settings].min()).replace(0, 1)
     chosen = inside.loc[((inside[settings] - median).abs() / spread).sum(axis=1).idxmin()]
@@ -202,9 +204,15 @@ def pick(t: pd.DataFrame, settings: list[str]) -> tuple[pd.Series, str]:
     return chosen, f"plateau of {len(inside)}: " + ", ".join(ranges)
 
 
-def walk(t: pd.DataFrame, settings: list[str], ratio: float, floor: float) -> int:
-    """The analyst's walk: index of the setting where loosening stops paying `ratio`."""
-    at = t[t["gap"] <= STABLE_GAP].sort_values(["prec", "n"], ascending=False).index[0]
+def walk(t: pd.DataFrame, settings: list[str], ratio: float, floor: float) -> int | None:
+    """The analyst's walk: index of the setting where loosening stops paying `ratio`.
+
+    None when no setting's seasons agree within STABLE_GAP: there is nowhere to start.
+    """
+    stable = t[t["gap"] <= STABLE_GAP]
+    if stable.empty:
+        return None
+    at = stable.sort_values(["prec", "n"], ascending=False).index[0]
 
     def pays(a: int, b: int) -> bool:
         gained = t.loc[b, "right"] - t.loc[a, "right"]
@@ -219,11 +227,10 @@ def walk(t: pd.DataFrame, settings: list[str], ratio: float, floor: float) -> in
             on_line = (t[others] == t.loc[at, others]).all(axis=1)
             line = t[on_line].sort_values(s).index.tolist()
             i = line.index(at)
-            step = (
-                1
-                if i + 1 < len(line) and (i == 0 or t.loc[line[i + 1], "n"] > t.loc[at, "n"])
-                else -1
-            )
+            # loosening is the direction that fires on more plays; on a tie, the upper side
+            up = t.loc[line[i + 1], "n"] if i + 1 < len(line) else -1
+            down = t.loc[line[i - 1], "n"] if i > 0 else -1
+            step = 1 if up >= down else -1
             ahead = [line[j] for j in (i + step, i + 2 * step) if 0 <= j < len(line)]
             if ahead and pays(at, ahead[0]) and t.loc[ahead[0], "prec"] >= floor:
                 at, moved = ahead[0], True
@@ -234,12 +241,14 @@ def walk(t: pd.DataFrame, settings: list[str], ratio: float, floor: float) -> in
 
 def walk_pick(
     t: pd.DataFrame, settings: list[str], ratio: float, floors: dict, groups: tuple[str, str]
-) -> tuple[int, str]:
+) -> tuple[int | None, str]:
     """The walk's stop and its level, strong / lean / dropped, by the row's floors."""
     worst = t[[f"{g} prec" for g in groups]].min(axis=1)
     at = None
     for level in [lv for lv in ("strong", "lean") if lv in floors]:
         at = walk(t, settings, ratio, floors[level])
+        if at is None:
+            return None, "dropped"
         near = (t[settings] - t.loc[at, settings]).abs().sum(axis=1) == 0.5
         ok = (
             (t["n"] >= floors["min_plays"])
@@ -276,6 +285,9 @@ def main() -> None:
             continue
         if "walk" in spec:
             at, verdict = walk_pick(t, settings, args.ratio, spec["walk"], groups)
+            if at is None:
+                print(f"no setting's groups agree within {STABLE_GAP:g} pts -> {verdict}")
+                continue
             c = t.loc[at]
             seasons = " / ".join(f"{c[f'{g} prec']:.1f}" for g in groups)
             print(
@@ -285,7 +297,7 @@ def main() -> None:
                 + f" -> {verdict}"
             )
             continue
-        chosen, how = pick(t, settings)
+        chosen, how = pick(t, settings, groups)
         print(f"{how}\npick: " + ", ".join(f"{s} {chosen[s]:g}" for s in settings))
 
 

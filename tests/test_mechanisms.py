@@ -233,15 +233,15 @@ POSITIONS = {"CB1": "CB", "CB2": "CB", "LB1": "ILB", "LB2": "ILB", "NB": "CB", "
 MUGGED = {**DEFENSE, "LB1": (51.5, 25.0), "LB2": (51.5, 28.5)}
 
 
-def _rostered(play, base):
+def _rostered(play, base, dataset="bdb2021"):
     names = list({**OFFENSE, **base})
     for name, pos in {**POSITIONS, "SS": "SS"}.items():
         play.loc[play["nfl_id"] == names.index(name) + 1, "position"] = pos
-    return play
+    return play.assign(dataset=dataset)  # the rush count, and so the rows, are 2018's
 
 
-def _pressure_hits(moves, base):
-    play = _rostered(_play(1, 1, moves, n_frames=21, base=base), base)
+def _pressure_hits(moves, base, dataset="bdb2021"):
+    play = _rostered(_play(1, 1, moves, n_frames=21, base=base), base, dataset)
     return mechanism_hits(defender_phases(play))
 
 
@@ -278,4 +278,33 @@ def test_a_second_level_rusher_needs_nobody_mugged():
 
 def test_pressure_rows_need_a_roster_position():
     play = _play(1, 1, {"LB1": (44.0, 22.0)}, n_frames=21, base=DEFENSE)  # film: no positions
-    assert mechanism_hits(defender_phases(play)).empty
+    assert mechanism_hits(defender_phases(play.assign(dataset="bdb2021"))).empty
+
+
+@pytest.mark.parametrize(
+    ("moves", "base"),
+    [({"LB2": (57.5, 28.5)}, MUGGED), ({"LB1": (44.0, 22.0)}, DEFENSE)],
+)
+def test_pressure_rows_stay_off_2023_which_has_no_rush_count(moves, base):
+    assert _pressure_hits(moves, base, dataset="bdb2026").empty
+
+
+# A single-high look with an off corner: the FS 19 yd deep and 5 yd off the center, the
+# widest corner 9.5 yd deep (technique, not a deep third, by the page's 12 yd corner line),
+# the SS in the box, two LBs mugged and one bailing.
+OFF_CORNER_SINGLE_HIGH = {**MUGGED, "FS": (68.5, 31.6), "CB2": (59.0, 47.0), "SS": (55.0, 35.0)}
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="QA 2026-10-20: _two_high counts corners 9-12 yd deep; the page needs 12 for the "
+    "widest defender, so it calls this two-high. Open definition question.",
+)
+def test_the_bluffs_two_high_agrees_with_the_shown_read_on_an_off_corner():
+    from nfl_coverage.analysis.report import structural_read
+
+    base = OFF_CORNER_SINGLE_HIGH
+    play = _rostered(_play(1, 1, {"LB2": (57.5, 28.5)}, n_frames=21, base=base), base)
+    shown = structural_read(play[play["rel_frame"] == 0], 49.5, 26.6, 9.0, "snap", [])
+    assert shown.shell == "1-high MOF-closed"
+    assert mechanism_hits(defender_phases(play)).empty  # not two high, so no front bluff

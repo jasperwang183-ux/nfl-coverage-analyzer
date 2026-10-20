@@ -49,7 +49,9 @@ def load(
     plays = pd.concat(plays, ignore_index=True)
     n = plays["number_of_pass_rushers"]
     plays["rush_label"] = np.where(n.isna(), None, np.where(n <= 4, "RUSH_LE4", "RUSH_GE5"))
-    return plays[plays["coverage_type"].isin(CLASSES)], pd.concat(hits, ignore_index=True)
+    # every labeled play, PREVENT included, as the fit scores the pressure rows; `report`
+    # narrows the coverage rows to CLASSES
+    return plays[plays["coverage_type"].notna()], pd.concat(hits, ignore_index=True)
 
 
 def report(
@@ -60,8 +62,12 @@ def report(
         fired = hits.loc[hits["mechanism"] == m.name, KEYS].drop_duplicates()
         t = plays.merge(fired.assign(fired=True), on=KEYS, how="left")
         t["fired"] = t["fired"].fillna(False).astype(bool)
-        target = "rush_label" if m.kind == "pressure" else "coverage_type"
-        t = t[t[target].notna()]  # pressure: 2018 only, the one season with a rush count
+        if m.kind == "pressure":
+            target = "rush_label"
+            t = t[t[target].notna()]  # 2018 only, the one season with a rush count
+        else:
+            target = "coverage_type"
+            t = t[t[target].isin(CLASSES)]
         t["implied"] = t[target].isin(m.implies)
         base = t["implied"].mean()
         hit = t.loc[t["fired"], "implied"].mean()
