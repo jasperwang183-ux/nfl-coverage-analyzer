@@ -194,6 +194,7 @@ class TestContext:
                 "down": [1, 3],
                 "yardsToGo": [10, 8],
                 "defendersInTheBox": [6, 5],
+                "numberOfPassRushers": [4, 6],
             }
         )
         games = pd.DataFrame(
@@ -203,6 +204,7 @@ class TestContext:
         assert ctx.loc[10, "defense"] == "CIN"
         assert ctx.loc[20, "defense"] == "KC"
         assert ctx.loc[20, "week"] == 1
+        assert ctx.loc[20, "number_of_pass_rushers"] == 6
 
     def test_bdb2026_columns(self):
         supp = pd.DataFrame(
@@ -222,3 +224,4 @@ class TestContext:
         ctx = _context_bdb2026(supp)
         assert ctx.loc[0, "defense"] == "LA" and ctx.loc[0, "defenders_in_box"] == 7
         assert "extra" not in ctx
+        assert np.isnan(ctx.loc[0, "number_of_pass_rushers"])  # 2023 has no rush count

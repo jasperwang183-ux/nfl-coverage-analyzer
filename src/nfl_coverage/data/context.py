@@ -21,6 +21,7 @@ CONTEXT_COLUMNS = [
     "down",
     "yards_to_go",
     "defenders_in_box",
+    "number_of_pass_rushers",  # bdb2021 only: 2023 tracking has no rushers and no count
 ]
 
 
@@ -31,7 +32,7 @@ def _context_bdb2026(supplementary: pd.DataFrame) -> pd.DataFrame:
             "defensive_team": "defense",
             "defenders_in_the_box": "defenders_in_box",
         }
-    )
+    ).assign(number_of_pass_rushers=float("nan"))
     return df[CONTEXT_COLUMNS].drop_duplicates(["game_id", "play_id"]).reset_index(drop=True)
 
 
@@ -43,6 +44,7 @@ def _context_bdb2021(plays: pd.DataFrame, games: pd.DataFrame) -> pd.DataFrame:
             "possessionTeam": "offense",
             "yardsToGo": "yards_to_go",
             "defendersInTheBox": "defenders_in_box",
+            "numberOfPassRushers": "number_of_pass_rushers",
         }
     )
     g = games.rename(
