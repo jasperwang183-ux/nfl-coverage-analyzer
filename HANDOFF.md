@@ -63,7 +63,8 @@ Outputs are in `data/verify/holdout/*_unit_e_2026-10-19.txt` and the `unit-e-hol
   (2023091709 play 438, Q1 6:41, 1st & 10, Stafford short right to Atwell for 11, Cover 3).
   The 3701 roll-up play is not in the manifest; its likely capture is the 2026-10-05
   10-45-27 Dolphins-Chargers file and needs the verify skill's add flow.
-- **Next:** pressure bluffs (2023 only), then the rest of the migration (sequence model on
+- **Next:** pressure bluffs (written "2023 only" here; it turned out 2018 only: 2023
+  tracking has no rushers and no rush count, see the pressure section above), then the rest of the migration (sequence model on
   the ball spot, scored once), then push.
 
 
