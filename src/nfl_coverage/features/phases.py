@@ -27,6 +27,7 @@ LANDMARK_CAP_S = 2.0
 FIRST_MOVE_YD = 1.0  # displacement from the snap spot that counts as moving
 
 PHASE_COLUMNS = [
+    "position",  # roster position at the snap; None on film
     "role",
     "is_mike",
     "align_depth",
@@ -93,6 +94,7 @@ def defender_phases(
     out = roles[["role", "is_mike", "depth", "lateral"]].rename(
         columns={"depth": "align_depth", "lateral": "align_lat"}
     )
+    out["position"] = d[d["rel_frame"] == 0].set_index(KEYS + ["nfl_id"])["position"]
     for name, (a, b) in (("first", FIRST_STEPS), ("commit", COMMIT)):
         pa, pb = _at(d, f(a), "a"), _at(d, f(b), "b")
         both = pa.join(pb, how="inner")

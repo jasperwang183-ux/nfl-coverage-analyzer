@@ -225,3 +225,57 @@ def test_the_buzz_leads_the_verdict_over_the_rotation():
     shown = structural_read(play[play["rel_frame"] == 0], 49.5, 26.6, 9.0, "snap", [])
     label, text = disguise_verdict("rotate_to_mof_closed", shown, played, hits)
     assert label == "buzz_soft" and "a buzz, leans Cover 3" in text
+
+
+# Pressure (2018 rosters): both LBs mugged 2 yd off the stand-in LOS (49.5), inside the
+# tackles (1.6 and 1.9 yd off the center), or off the ball 4.5 yd deep as in DEFENSE.
+POSITIONS = {"CB1": "CB", "CB2": "CB", "LB1": "ILB", "LB2": "ILB", "NB": "CB", "FS": "FS"}
+MUGGED = {**DEFENSE, "LB1": (51.5, 25.0), "LB2": (51.5, 28.5)}
+
+
+def _rostered(play, base):
+    names = list({**OFFENSE, **base})
+    for name, pos in {**POSITIONS, "SS": "SS"}.items():
+        play.loc[play["nfl_id"] == names.index(name) + 1, "position"] = pos
+    return play
+
+
+def _pressure_hits(moves, base):
+    play = _rostered(_play(1, 1, moves, n_frames=21, base=base), base)
+    return mechanism_hits(defender_phases(play))
+
+
+def test_a_mugged_linebacker_who_bails_is_a_front_bluff():
+    hits = _pressure_hits({"LB2": (57.5, 28.5)}, MUGGED)  # bails 6 yd in 2 s
+    assert hits["mechanism"].tolist() == ["front_bluff"]
+    assert hits.iloc[0]["nfl_id"] == list({**OFFENSE, **MUGGED}).index("LB2") + 1
+    assert hits.iloc[0]["text"].endswith("likely 4 or fewer rush")
+
+
+@pytest.mark.parametrize(
+    ("moves", "base"),
+    [
+        ({"LB2": (47.5, 28.5)}, MUGGED),  # both mugged, nobody bails: the heat the look shows
+        ({"LB2": (57.5, 32.0)}, {**DEFENSE, "LB2": (51.5, 28.5)}),  # only one mugged
+        ({"LB2": (57.5, 28.5)}, {**MUGGED, "SS": (63.0, 27.0)}),  # single-high: SS in the post
+    ],
+)
+def test_a_front_bluff_needs_two_mugged_two_high_and_a_bail(moves, base):
+    assert _pressure_hits(moves, base).empty
+
+
+def test_an_off_ball_linebacker_coming_downhill_is_a_second_level_rusher():
+    hits = _pressure_hits({"LB1": (44.0, 22.0)}, DEFENSE)  # 10 yd toward the line in 2 s
+    assert hits["mechanism"].tolist() == ["second_level_rush"]
+    assert hits.iloc[0]["nfl_id"] == list({**OFFENSE, **DEFENSE}).index("LB1") + 1
+    assert hits.iloc[0]["text"].endswith("a second-level rusher, likely 5+ rush")
+
+
+def test_a_second_level_rusher_needs_nobody_mugged():
+    base = {**DEFENSE, "LB2": (51.5, 28.5)}
+    assert _pressure_hits({"LB1": (44.0, 22.0)}, base).empty
+
+
+def test_pressure_rows_need_a_roster_position():
+    play = _play(1, 1, {"LB1": (44.0, 22.0)}, n_frames=21, base=DEFENSE)  # film: no positions
+    assert mechanism_hits(defender_phases(play)).empty

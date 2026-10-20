@@ -26,6 +26,10 @@ row fall short. The stop is strong if it has the row's play floor, the strong pr
 setting that passes too; else the walk reruns on the lean precision; else the row is
 dropped.
 
+The pressure rows score against the 2018 rush count (`plays.numberOfPassRushers`: 4 or
+fewer, or 5 or more) instead of the coverage label, on 2018 only, with weeks 1-7 and 8-13
+standing in for the two seasons.
+
 Defender phases for every tuning play are cached in
 data/processed/phases_tuning_ball.parquet; --rebuild re-reads the frames.
 
@@ -46,13 +50,18 @@ from nfl_coverage.analysis.holdout import FRAMES_DIR, tuning_weeks
 from nfl_coverage.analysis.mechanisms import (
     BUZZ_SOFT,
     CORNER_ROLL_UP,
+    FRONT_BLUFF,
     POLE_RUN,
+    SECOND_LEVEL_RUSH,
     _buzz,
     _corner_roll_up,
+    _front_bluff,
     _pole_run,
+    _second_level_rush,
 )
 from nfl_coverage.config import DATA_PROCESSED
 from nfl_coverage.data.ball_spots import load_ball_spots
+from nfl_coverage.data.context import load_play_context
 from nfl_coverage.features.alignment import KEYS
 from nfl_coverage.features.phases import defender_phases
 
@@ -60,6 +69,10 @@ CACHE = DATA_PROCESSED / "phases_tuning_ball.parquet"
 DATASETS = ("bdb2021", "bdb2026")
 STABLE_GAP = 5.0  # points between the seasons' precision
 SEASON_SLACK = 3.0  # points a season may sit under the pooled floor
+# Pressure rows score on 2018 only, so the two halves of its tuning weeks stand in for the
+# two seasons.
+BLOCKS = ("w1-7", "w8-13")
+RUSH = {"target": "rush_label", "by": ("block", BLOCKS)}
 
 
 def halves(lo: float, hi: float) -> list[float]:
@@ -83,7 +96,21 @@ SWEEPS = {
         "grid": {"lat_min": halves(6.0, 10.0), "soft_min": halves(2.0, 7.0)},
         "fires": lambda p, lat_min, soft_min: _buzz(p, lat_min, soft_min),
         "implies": BUZZ_SOFT.implies,
-        "walk": {"strong": 85.0, "lean": 70.0, "min_plays": 200},
+        "walk": {"strong": 85.0, "lean": 70.0, "min_plays": 200, "slack": SEASON_SLACK},
+    },
+    "front_bluff": {
+        "grid": {"lat_max": halves(2.0, 4.0), "bail_min": halves(0.0, 3.0)},
+        "fires": lambda p, lat_max, bail_min: _front_bluff(p, lat_max, bail_min),
+        "implies": FRONT_BLUFF.implies,
+        "walk": {"strong": 75.0, "lean": 65.0, "min_plays": 75},
+        **RUSH,
+    },
+    "second_level_rush": {
+        "grid": {"lat_max": halves(2.0, 4.0), "downhill_max": halves(-6.0, -2.0)},
+        "fires": lambda p, lat_max, downhill_max: _second_level_rush(p, lat_max, downhill_max),
+        "implies": SECOND_LEVEL_RUSH.implies,
+        "walk": {"strong": 70.0, "lean": 60.0, "min_plays": 75},
+        **RUSH,
     },
 }
 
@@ -111,10 +138,24 @@ def load(rebuild: bool) -> pd.DataFrame:
     return out
 
 
+def with_rush(phases: pd.DataFrame) -> pd.DataFrame:
+    """Add each 2018 play's rush label (RUSH_LE4 / RUSH_GE5) and week block; NaN elsewhere."""
+    ctx = load_play_context("bdb2021").dropna(subset=["number_of_pass_rushers"])
+    ctx = ctx.assign(
+        dataset="bdb2021",
+        rush_label=np.where(ctx["number_of_pass_rushers"] <= 4, "RUSH_LE4", "RUSH_GE5"),
+        block=np.where(ctx["week"] <= 7, BLOCKS[0], BLOCKS[1]),
+    )
+    return phases.merge(ctx[KEYS + ["rush_label", "block"]], on=KEYS, how="left")
+
+
 def score(phases: pd.DataFrame, name: str, min_n: int) -> pd.DataFrame:
     spec = SWEEPS[name]
-    plays = phases.groupby(KEYS)["coverage_type"].first()
-    implied = plays.isin(spec["implies"])
+    target = spec.get("target", "coverage_type")
+    by, groups = spec.get("by", ("dataset", DATASETS))
+    phases = phases[phases[target].notna()]
+    plays = phases.groupby(KEYS)[[target, by]].first()
+    implied = plays[target].isin(spec["implies"])
     rows = []
     for values in itertools.product(*spec["grid"].values()):
         kw = dict(zip(spec["grid"], values))
@@ -123,8 +164,8 @@ def score(phases: pd.DataFrame, name: str, min_n: int) -> pd.DataFrame:
         right = int((fired & implied).sum())
         row = {**kw, "n": int(fired.sum()), "right": right, "wrong": int(fired.sum()) - right}
         row["prec"] = 100 * right / row["n"] if row["n"] else np.nan
-        for ds in DATASETS:
-            in_ds = plays.index.get_level_values("dataset") == ds
+        for ds in groups:
+            in_ds = (plays[by] == ds).to_numpy()
             base = implied[in_ds].mean()
             n = int((fired & in_ds).sum())
             p = implied[fired & in_ds].mean() if n else np.nan
@@ -134,7 +175,7 @@ def score(phases: pd.DataFrame, name: str, min_n: int) -> pd.DataFrame:
             row[f"{ds} prec"] = 100 * p
         rows.append(row)
     t = pd.DataFrame(rows)
-    t["gap"] = (t[f"{DATASETS[0]} prec"] - t[f"{DATASETS[1]} prec"]).abs()
+    t["gap"] = (t[f"{groups[0]} prec"] - t[f"{groups[1]} prec"]).abs()
     return t[t["n"] >= min_n].reset_index(drop=True)
 
 
@@ -191,16 +232,19 @@ def walk(t: pd.DataFrame, settings: list[str], ratio: float, floor: float) -> in
     return at
 
 
-def walk_pick(t: pd.DataFrame, settings: list[str], ratio: float, floors: dict) -> tuple[int, str]:
+def walk_pick(
+    t: pd.DataFrame, settings: list[str], ratio: float, floors: dict, groups: tuple[str, str]
+) -> tuple[int, str]:
     """The walk's stop and its level, strong / lean / dropped, by the row's floors."""
-    seasons = t[[f"{ds} prec" for ds in DATASETS]].min(axis=1)
-    for level in ("strong", "lean"):
+    worst = t[[f"{g} prec" for g in groups]].min(axis=1)
+    at = None
+    for level in [lv for lv in ("strong", "lean") if lv in floors]:
         at = walk(t, settings, ratio, floors[level])
         near = (t[settings] - t.loc[at, settings]).abs().sum(axis=1) == 0.5
         ok = (
             (t["n"] >= floors["min_plays"])
             & (t["prec"] >= floors[level])
-            & (seasons >= floors[level] - SEASON_SLACK)
+            & (worst >= floors[level] - floors.get("slack", np.inf))
             & (t["gap"] <= STABLE_GAP)
         )
         if ok[at] and ok[near].any():
@@ -216,7 +260,7 @@ def main() -> None:
     ap.add_argument("--rebuild", action="store_true")
     args = ap.parse_args()
     pd.set_option("display.width", 220)
-    phases = load(args.rebuild)
+    phases = with_rush(load(args.rebuild))
     print(f"{phases.groupby(KEYS).ngroups} labeled tuning plays")
     for name, spec in SWEEPS.items():
         settings = list(spec["grid"])
@@ -226,10 +270,14 @@ def main() -> None:
             print(f"no setting fires on {args.min_n} plays")
             continue
         print(t.round(3).to_string(index=False))
+        groups = spec.get("by", ("dataset", DATASETS))[1]
+        if spec.get("walk", False) is None:
+            print("walk floors not set yet")
+            continue
         if "walk" in spec:
-            at, verdict = walk_pick(t, settings, args.ratio, spec["walk"])
+            at, verdict = walk_pick(t, settings, args.ratio, spec["walk"], groups)
             c = t.loc[at]
-            seasons = " / ".join(f"{c[f'{ds} prec']:.1f}" for ds in DATASETS)
+            seasons = " / ".join(f"{c[f'{g} prec']:.1f}" for g in groups)
             print(
                 f"walk at {args.ratio:g} right per wrong stops at "
                 + ", ".join(f"{s} {c[s]:g}" for s in settings)

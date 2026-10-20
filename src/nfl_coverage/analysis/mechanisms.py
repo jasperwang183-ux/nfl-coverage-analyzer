@@ -17,6 +17,8 @@ from typing import Literal
 
 import pandas as pd
 
+from nfl_coverage.analysis.roles import LINE_DEPTH
+from nfl_coverage.analysis.shell import DEEP_DEPTH, MOF_HALFWIDTH, MOF_PARTNER_MIN
 from nfl_coverage.features.alignment import KEYS
 
 Kind = Literal["coverage", "pressure", "technique"]
@@ -235,10 +237,115 @@ BUZZ_SOFT = Mechanism(
     downhill=True,
 )
 
+# Pressure: who rushes, not the coverage. A pressure row points to the rush count
+# (RUSH_LE4 / RUSH_GE5, from plays.numberOfPassRushers), which only 2018 has: 2023
+# tracking carries no rushers. 2018 tracks linebackers and DBs but almost no linemen,
+# and film has no positions, so these rows fire on 2018 tracking only. Fitted on 2018
+# tuning weeks 1-13 (13,058 plays; 74% rush 4 or fewer) by the analyst's walk
+# (scripts/fit_mechanism_depths.py, 2026-10-19), weeks 1-7 vs 8-13 standing in for two
+# seasons:
+# - Front bluff: two or more LBs or DBs mugged within BLUFF_LAT_MAX of the ball (inside
+#   the tackles: the A and B gaps), two high at the snap, and one of them bails. 140 plays,
+#   4 or fewer rush 79.3% (80.2 / 77.6), strong against the analyst's 75% floor; the look
+#   alone rushes 4 or fewer on 68.9% (334), and the same look and bail from single-high on
+#   74.4% (195). Widening to 6 yd took 340 plays at 76.2%, but there a two-high mugged look
+#   where nobody bails is already 73.2%, so the analyst kept the tackles (2026-10-19).
+# - Second-level rusher: nobody mugged within RUSH_LAT_MAX and an off-ball LB or DB comes
+#   downhill. 551 plays, 5 or more rush 73.7% (75.2 / 71.4), strong against 70%. The rest
+#   are most likely a lineman dropping out (a sim), which 2018 cannot see.
+# Holdout pass marks, set before it was scored (analyst, 2026-10-19), on the share right
+# when it fires, 3 points under each tuning floor: front bluff 72% or more strong, 60-72%
+# lean, under 60% dropped; second-level rusher 67% strong, 55-67% lean, under 55% dropped.
+SECOND_LEVEL = frozenset({"OLB", "ILB", "MLB", "LB", "CB", "SS", "FS", "DB", "S"})
+BLUFF_LAT_MAX = 4.0  # yd off the formation center at the snap: inside the tackles
+BAIL_MIN = 2.0  # yd/s over +0.7-1.2 s away from the LOS
+RUSH_LAT_MAX = 3.0  # yd off the formation center at the snap: nobody mugged in here
+RUSH_DOWNHILL_MAX = -4.5  # yd/s over +0.7-1.2 s toward the LOS
+
+
+def _mugged(p: pd.DataFrame, lat_max: float) -> pd.Series:
+    return (
+        p["position"].isin(SECOND_LEVEL)
+        & (p["align_depth"] < LINE_DEPTH)
+        & (p["align_lat"].abs() <= lat_max)
+    )
+
+
+def _n_mugged(p: pd.DataFrame, lat_max: float) -> pd.Series:
+    return _mugged(p, lat_max).astype(int).groupby([p[k] for k in KEYS]).transform("sum")
+
+
+def _two_high(p: pd.DataFrame) -> pd.Series:
+    """Two or more deep at the snap with the middle open (`shell.mof_is_closed`, per play)."""
+    keys = [p[k] for k in KEYS]
+    off = p["align_lat"].abs().where(p["align_depth"] >= DEEP_DEPTH)
+    rank = off.groupby(keys).rank(method="first")
+    nearest = off.where(rank == 1).groupby(keys).transform("max")
+    partner = off.where(rank == 2).groupby(keys).transform("max")
+    closed = (nearest <= MOF_HALFWIDTH + 0.05) & (partner >= MOF_PARTNER_MIN - 0.05)
+    return (off.notna().groupby(keys).transform("sum") >= 2) & ~closed
+
+
+def _front_bluff(
+    p: pd.DataFrame, lat_max: float = BLUFF_LAT_MAX, bail_min: float = BAIL_MIN
+) -> pd.Series:
+    """A mugged LB or DB who bails, with two or more mugged and two high at the snap."""
+    return (
+        _mugged(p, lat_max)
+        & (p["commit_v_depth"] > bail_min)
+        & (_n_mugged(p, lat_max) >= 2)
+        & _two_high(p)
+    )
+
+
+def _second_level_rush(
+    p: pd.DataFrame, lat_max: float = RUSH_LAT_MAX, downhill_max: float = RUSH_DOWNHILL_MAX
+) -> pd.Series:
+    """An off-ball LB or DB who comes downhill fast, with nobody mugged at the snap."""
+    return (
+        p["position"].isin(SECOND_LEVEL)
+        & (p["align_depth"] >= LINE_DEPTH)
+        & (p["commit_v_depth"] < downhill_max)
+        & (_n_mugged(p, lat_max) == 0)
+    )
+
+
+FRONT_BLUFF = Mechanism(
+    name="front_bluff",
+    kind="pressure",
+    implies=frozenset({"RUSH_LE4"}),
+    fires=_front_bluff,
+    text=lambda r: (
+        f"from two high, two or more LBs or DBs were mugged at the line and a {r['position']} "
+        "bailed "
+        f"({r['commit_v_depth']:.1f} yd/s by +1.2 s): an A-gap bluff, likely 4 or fewer rush"
+    ),
+)
+
+SECOND_LEVEL_RUSH = Mechanism(
+    name="second_level_rush",
+    kind="pressure",
+    implies=frozenset({"RUSH_GE5"}),
+    fires=_second_level_rush,
+    text=lambda r: (
+        f"with nobody mugged, a {r['position']} {r['align_depth']:.0f} yd off the ball came "
+        f"downhill ({r['commit_v_depth']:.1f} yd/s by +1.2 s): a second-level rusher, "
+        "likely 5+ rush"
+    ),
+    downhill=True,
+)
+
 # The film path reads only the first coverage hit, so the roll-up goes after the deep runs.
 # The buzz never fires with the roll-up or the late post on the tuning weeks, and with the
-# pole run on 2 plays.
-MECHANISMS: tuple[Mechanism, ...] = (POLE_RUN, LATE_POST, CORNER_ROLL_UP, BUZZ_SOFT)
+# pole run on 2 plays. Pressure rows are never a coverage hit, so their place is free.
+MECHANISMS: tuple[Mechanism, ...] = (
+    POLE_RUN,
+    LATE_POST,
+    CORNER_ROLL_UP,
+    BUZZ_SOFT,
+    FRONT_BLUFF,
+    SECOND_LEVEL_RUSH,
+)
 # Rows written but not yet shown to lift their families on the tuning weeks: the scripts
 # can score them, the page does not run them.
 CANDIDATES: tuple[Mechanism, ...] = ()
