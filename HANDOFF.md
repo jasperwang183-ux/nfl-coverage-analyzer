@@ -1,4 +1,31 @@
-# Session Handoff — updated 2026-10-20
+# Session Handoff — updated 2026-10-22
+
+## Film center split: middle call from halfway, mechanisms from the ball (2026-10-22)
+
+Film measured every sideways distance from halfway between the ball and the field's
+middle (added 2026-09-25 for the Melbourne clips); every mechanism was fitted on tracking
+from the QB's y (a median 0.13 yd off the ball, 2018 wk 1). On 2023 wk 2 SF @ LA play
+3503 (the page clip `187dcd12b5d2`, matched by defender shape, label Cover 2 zone) that
+moved the pole runner 1.7 yd: 4.5 yd out and classed apex, so Tampa 2 never fired.
+
+- **Measured first, rule set before the run** (analyst): played middle call vs the label,
+  tuning weeks 1-13 of both seasons, 22,137 plays: QB 80.92%, halfway 81.88% (+0.96 pts,
+  +5.1 paired SE), field middle 80.86%. The gain is all hash-ball plays (80.7 -> 81.9%);
+  2023 alone +5.3 SE, 2018 alone +1.9 SE. Rule: halfway by > 2 paired SE -> split.
+- **`pipeline.film_centers`**: the middle call (shown, played, shell rotation) keeps
+  halfway; snap roles and mechanisms use the ball. Both are stored in `result.json` under
+  `formation.centers` with where each came from. The middle reason now says "from the
+  middle of the field"; tracking reads keep "off the ball".
+- **Play 3503 after**: the runner lands 11.2 yd deep, 2.8 yd off the ball, role box; the
+  pole run fires and the played card reads Tampa 2.
+- **Film** `verify.py film` after-c2c3 vs after-center-split: verdicts identical (8/11);
+  one call changed: sf-lar-clip2 (analyst: man look -> Cover 3) now leads with a corner
+  roll-up instead of the rotation; its played read stays 3-deep MOF-closed.
+- **Not changed:** the still / CLI ingest path (`vision/clip.py`, `ingest_clip.py`) still
+  measures from the ball; the holdout harness `film_read_eval` reads the middle from the
+  QB, so its score no longer mirrors the page's middle call exactly.
+- **Also found:** the auto-namer named painted 10/15/20 as 40/45/50 on both 2023 page
+  clips (a 30-yd shift; depth reads unaffected, field position wrong).
 
 ## QA follow-up: two-high on the page's line, commit window stops at the throw (2026-10-20)
 

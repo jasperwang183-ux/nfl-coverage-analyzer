@@ -109,12 +109,10 @@ def main() -> None:
             read = read_tracked(clip, snap_t=snap_t)
             rep = identity_report(read.tracks, truth, HORIZON)
             scored = [p for p in rep if p.frames]
-            los_c, center = _canonical(read.offense, read.los, read.ball_y)
-            snap = read.tracks[read.tracks["rel_frame"] == 0]
-            center = (
-                center if center is not None else snap.loc[snap["side"] == "Offense", "y"].mean()
+            los_c = _canonical(read.offense, read.los, read.ball_y)[0]
+            phases = defender_phases(
+                read.tracks, los=los_c, center=read.centers.mechanisms, step=read.step
             )
-            phases = defender_phases(read.tracks, los=los_c, center=center, step=read.step)
             me = next((p for p in rep if p.truth_id == player_id), None)
             rows.append(
                 {

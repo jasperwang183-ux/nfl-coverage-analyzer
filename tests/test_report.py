@@ -50,6 +50,16 @@ def test_two_high_open_reads_high_confidence():
     assert any("middle open" in x for x in r.reasons)
 
 
+def test_the_middle_reason_names_its_reference():
+    ball = structural_read(_frame(), 49.5, 26.6, 9.0, "snap", [])
+    assert any("yd off the ball laterally" in x for x in ball.reasons)
+    mid = structural_read(
+        _frame(), 49.5, 26.6, 9.0, "snap", [], lateral="from the middle of the field"
+    )
+    near = [x for x in mid.reasons if x.startswith("nearest deep player")]
+    assert "yd from the middle of the field" in near[0] and near[0].endswith("middle open")
+
+
 def test_caveats_and_thin_margins_lower_confidence():
     r = structural_read(
         _frame(), 49.5, 26.6, 9.0, "snap", caveats=["deep zone beyond 14 yd is off-frame"]
