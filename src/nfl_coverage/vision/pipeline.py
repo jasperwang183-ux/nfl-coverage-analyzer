@@ -64,6 +64,8 @@ from nfl_coverage.vision.track import (
 from nfl_coverage.vision.visibility import check_visibility
 
 SHOWN_DEEP = 9.0  # yd: deep at the snap (the tracking-data threshold)
+# how the cards word sideways distance from `Centers.middle` (the mechanisms' is the ball)
+MIDDLE_LATERAL = "from the middle of the field"
 JPEG_QUALITY = 92
 
 
@@ -342,6 +344,7 @@ class ClipRead:
     los: float  # field x (raw) actually used
     ball_y: float | None
     used: dict[str, str]  # 'inferred' / 'given' per value
+    centers: Centers
     warnings: list[str]
     sides: SideAssignment
     bodies: SnapBodies
@@ -379,6 +382,13 @@ class ClipRead:
                 },
                 "used": {"offense": self.offense, "los": self.los, "ball_y": self.ball_y},
                 "source": self.used,
+                "centers": {
+                    "middle": {"y": self.centers.middle, "from": self.centers.middle_from},
+                    "mechanisms": {
+                        "y": self.centers.mechanisms,
+                        "from": self.centers.mechanisms_from,
+                    },
+                },
             },
             "warnings": self.warnings,
             "sides": {
@@ -414,14 +424,43 @@ def _jsonable(x):
 
 
 def _canonical(offense: str, los: float, ball_y: float | None) -> tuple[float, float | None]:
-    """LOS and middle-of-field center in canonical coordinates (offense moving right)."""
+    """LOS and ball y in canonical coordinates (offense moving right)."""
     los_c = FIELD_LENGTH - los if offense == "right" else los
-    center = None
+    ball_c = None
     if ball_y is not None:
         ball_c = FIELD_WIDTH - ball_y if offense == "right" else ball_y
-        # a post safety on a hash-mark ball sits between the ball and the field's middle
-        center = (ball_c + FIELD_WIDTH / 2) / 2
-    return los_c, center
+    return los_c, ball_c
+
+
+@dataclass(frozen=True)
+class Centers:
+    """The canonical y each rule measures sideways distance from, and where it came from."""
+
+    middle: float  # the middle-of-field call: shown, played, shell rotation
+    middle_from: str
+    mechanisms: float  # snap roles and the first-second mechanisms
+    mechanisms_from: str
+
+
+def film_centers(ball_c: float | None, offense_y: float) -> Centers:
+    """Each rule keeps the reference it was tuned with.
+
+    The mechanisms were fitted on tracking data from the QB's y at the snap, which sits a
+    median 0.13 yd off the ball (2018 wk 1): the ball. The middle call reads where the
+    safeties sit on the field: halfway between the ball and the field's middle. Played
+    middle vs the label, tuning weeks 1-13 of both seasons (22,137 plays): halfway 81.88%,
+    QB 80.92% (+5.1 paired SE), the field's middle 80.86%; the gain is all hash-ball plays.
+    With no ball spot both fall back to the offense's mean y.
+    """
+    if ball_c is None:
+        src = "the offense's mean y (no ball spot)"
+        return Centers(offense_y, src, offense_y, src)
+    return Centers(
+        middle=(ball_c + FIELD_WIDTH / 2) / 2,
+        middle_from="halfway between the ball and the field's middle",
+        mechanisms=ball_c,
+        mechanisms_from="the ball",
+    )
 
 
 def sequence_reads(
@@ -508,23 +547,24 @@ def read_tracked(
 
     sides = assign_sides(frames[snap_i], calibs[snap_i], los, offense, bodies)
     tracks = canonical_tracks(frames, calibs, sides, snap_i, offense, step, los=los)
-    los_c, center = _canonical(offense, los, ball_y)
+    los_c, ball_c = _canonical(offense, los, ball_y)
+    snap = tracks[tracks["rel_frame"] == 0]
+    centers = film_centers(ball_c, snap.loc[snap["side"] == "Offense", "y"].mean())
+    mid = centers.middle
 
     mof_rf, played_rf = played_frames(int(tracks["rel_frame"].max()), step)
     # the disguise component compares the middle at the snap with the middle once it is read
     rot = shell_rotation(
-        tracks, run_frame=mof_rf, run_deep_depth=MOF_READ[1], center=center, los=los_c
+        tracks, run_frame=mof_rf, run_deep_depth=MOF_READ[1], center=mid, los=los_c
     ).iloc[0]
-    snap = tracks[tracks["rel_frame"] == 0]
-    center_or_off = (
-        center if center is not None else snap.loc[snap["side"] == "Offense", "y"].mean()
-    )
 
     shown_caveats = check_visibility(
         calibs[snap_i], frames[snap_i].image.shape[:2], los, offense
     ).warnings
-    shown = structural_read(snap, los_c, center_or_off, SHOWN_DEEP, "snap", list(shown_caveats))
-    phases = defender_phases(tracks, los=los_c, center=center_or_off, step=step)
+    shown = structural_read(
+        snap, los_c, mid, SHOWN_DEEP, "snap", list(shown_caveats), lateral=MIDDLE_LATERAL
+    )
+    phases = defender_phases(tracks, los=los_c, center=centers.mechanisms, step=step)
     hits = [_jsonable(h) for h in mechanism_hits(phases)[HIT_COLUMNS].to_dict("records")]
     coverage_hit = next((h for h in hits if h["kind"] == "coverage"), None)
     played: StructuralRead | None = None
@@ -534,7 +574,9 @@ def read_tracked(
         played_caveats = list(
             check_visibility(calibs[pi], frames[pi].image.shape[:2], los, offense).warnings
         )
-        played = played_read(tracks, los_c, center_or_off, step, played_caveats, hit=coverage_hit)
+        played = played_read(
+            tracks, los_c, mid, step, played_caveats, hit=coverage_hit, lateral=MIDDLE_LATERAL
+        )
 
     variant: list[tuple[str, float]] = []
     if bundle is not None and len(snap):
@@ -575,6 +617,7 @@ def read_tracked(
         los=float(los),
         ball_y=None if ball_y is None else float(ball_y),
         used=used,
+        centers=centers,
         warnings=warnings,
         sides=sides,
         bodies=bodies,

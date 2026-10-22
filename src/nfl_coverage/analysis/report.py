@@ -126,6 +126,7 @@ def structural_read(
     rel_frame: int = 0,
     count_test: ProjectedDepth | None = None,
     rates: pd.Series | None = None,
+    lateral: str = "off the ball laterally",
 ) -> StructuralRead:
     """Read one canonical frame's defense into structure + confidence + reasons.
 
@@ -133,7 +134,7 @@ def structural_read(
     `los`/`center` in canonical coords, `deep_depth` the deep threshold to use
     (DEEP_DEPTH at the snap, deeper after it). With a `count_test`, where each defender is
     headed replaces the line (corners included), using `rates` (yd/s away from the LOS, by
-    nfl_id).
+    nfl_id). `lateral` names what `center` is in the reasons.
     """
     d = deep_defenders(analysis, rel_frame, deep_depth=deep_depth, los=los, center=center)
     if count_test is None:
@@ -192,7 +193,7 @@ def structural_read(
             f"{n_deep} defender{'s' if n_deep != 1 else ''} {line} "
             f"({', '.join(f'{v:.1f}' for v in deep['depth'])} yd)"
         )
-        near = f"nearest deep player {offsets[0]:.1f} yd off the ball laterally"
+        near = f"nearest deep player {offsets[0]:.1f} yd {lateral}"
         if n_deep >= 2:
             near += f", next {offsets[1]:.1f} yd"
         reasons.append(near + (" -> middle closed" if mof_closed else " -> middle open"))
@@ -272,6 +273,7 @@ def played_read(
     count_read: tuple[float, float] = COUNT_READ,
     hit: dict | None = None,
     count_test: ProjectedDepth | None = COUNT_TEST,
+    lateral: str = "off the ball laterally",
 ) -> StructuralRead:
     """The played structure: the middle from the early frame, the deep count from the later one.
 
@@ -295,7 +297,7 @@ def played_read(
         frame = tracks[tracks["rel_frame"] == rf]
         when = f"+{rf * step:.1f} s"
         rates = drop_rates(tracks, rf, test.window, step) if test else None
-        return structural_read(frame, los, center, line, when, caveats, rf, test, rates)
+        return structural_read(frame, los, center, line, when, caveats, rf, test, rates, lateral)
 
     middle, count = at(mf, mof_read[1]), at(cf, count_read[1], count_test)
     src = middle if middle.n_deep else count

@@ -177,3 +177,18 @@ def test_a_line_defender_who_drops_into_coverage_is_kept():
     )
     tr = canonical_tracks([frame(i) for i in range(7)], [calib] * 7, sides, 0, "left")
     assert sorted(tr["nfl_id"].unique()) == [1, 2]
+
+
+def test_film_centers_keep_each_rule_on_its_tuned_reference():
+    from nfl_coverage.vision.pipeline import _canonical, film_centers
+
+    # offense lined up on the right: canonical mirrors the ball to the other hash
+    los_c, ball_c = _canonical("right", 70.0, 29.73)
+    assert los_c == pytest.approx(50.0) and ball_c == pytest.approx(23.57)
+    c = film_centers(ball_c, offense_y=30.0)
+    assert c.mechanisms == pytest.approx(23.57) and c.mechanisms_from == "the ball"
+    assert c.middle == pytest.approx((23.57 + 26.65) / 2)  # halfway to the field's middle
+    assert c.middle_from.startswith("halfway")
+    none = film_centers(None, offense_y=30.0)
+    assert none.middle == none.mechanisms == 30.0
+    assert "no ball spot" in none.middle_from
