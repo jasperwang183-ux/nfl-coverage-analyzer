@@ -403,6 +403,8 @@ MECHANISMS: tuple[Mechanism, ...] = (
 CANDIDATES: tuple[Mechanism, ...] = ()
 
 HIT_COLUMNS = ["mechanism", "kind", "nfl_id", "t", "text"]
+# the runner's numbers the cards explain the hit with (analysis.explain)
+HIT_NUMBERS = ["align_depth", "landmark_depth", "landmark_lat", "commit_v_depth"]
 
 
 def mechanism_hits(
@@ -417,7 +419,7 @@ def mechanism_hits(
         speed = -hit["commit_v_depth"] if m.downhill else hit["commit_v_depth"]
         best = hit.loc[speed.groupby([hit[k] for k in KEYS]).idxmax()]
         parts.append(
-            best[KEYS].assign(
+            best[KEYS + HIT_NUMBERS].assign(
                 mechanism=m.name,
                 kind=m.kind,
                 nfl_id=best["nfl_id"],
@@ -426,7 +428,7 @@ def mechanism_hits(
             )
         )
     if not parts:
-        return pd.DataFrame(columns=KEYS + HIT_COLUMNS)
+        return pd.DataFrame(columns=KEYS + HIT_COLUMNS + HIT_NUMBERS)
     return pd.concat(parts, ignore_index=True)
 
 

@@ -356,8 +356,9 @@ class CalibrateRequest(BaseModel):
 class CorrectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    phase: Literal["pre", "post"]
-    target: Literal["shell", "exact"] = "shell"  # the structural call, or the model's coverage
+    phase: Literal["pre", "post", "disguise"]
+    # the structural call, the model's coverage, or (phase "disguise") the disguise call
+    target: Literal["shell", "exact", "disguise"] = "shell"
     correct: bool
     call: str | None = Field(None, min_length=1, max_length=60)
     note: str | None = Field(None, max_length=2000)
@@ -483,7 +484,12 @@ def create_app(
             variants = list(seq.classes)
         else:
             variants = [str(c) for c in b["model"].classes_] if b is not None else []
-        return {"shells": list(shells), "variants": variants, "other": "Other"}
+        return {
+            "shells": list(shells),
+            "variants": variants,
+            "disguises": DISGUISE_CALLS,
+            "other": "Other",
+        }
 
     @app.get("/api/clips/{clip_id}")
     def get_clip(clip_id: str):
@@ -726,6 +732,10 @@ def create_app(
             raise HTTPException(409, "there is no read to correct yet")
         meta = store.meta(clip_id)
         res = json.loads((d / "result.json").read_text())
+        if (req.phase == "disguise") != (req.target == "disguise"):
+            raise HTTPException(422, "the disguise card grades the disguise call, and only it")
+        if req.phase == "disguise":
+            return log_disguise_verdict(store, clip_id, meta, res, req)
         read = res["report"]["shown" if req.phase == "pre" else "played"]
         if read is None:
             raise HTTPException(409, "there is no post-snap read to correct")
@@ -755,6 +765,44 @@ def create_app(
         return rec
 
     return app
+
+
+# What a person may say the disguise card should have read (the card's own calls first).
+DISGUISE_CALLS = [
+    "no disguise",
+    "Tampa 2",
+    "Cover 2 trap",
+    "Cover 3 buzz",
+    "a hidden post safety",
+    "two-high rotated to single-high",
+    "single-high split to two-high",
+]
+
+
+def log_disguise_verdict(
+    store: ClipStore, clip_id: str, meta: dict, res: dict, req: CorrectionRequest
+) -> dict:
+    card = res["report"].get("cards", {}).get("disguise")
+    if card is None:
+        raise HTTPException(409, "re-read this clip: its read has no disguise card")
+    rec = {
+        "logged": time.time(),
+        "clip": meta["name"],
+        "clip_id": clip_id,
+        "phase": "disguise",
+        "target": "disguise",
+        "correct": req.correct,
+        "call": req.call or card["call"],
+        "note": req.note,
+        "model_call": card["call"],
+        "model_label": res["report"]["disguise_label"],
+        "model_guess": card["guess"],
+        "snap_t": res["snap"]["t"],
+        "read_t": res["played_frame"]["t"],
+    }
+    log_correction(rec)
+    store.update(clip_id, corrections={**meta.get("corrections", {}), "disguise": rec})
+    return rec
 
 
 def log_correction(rec: dict) -> None:

@@ -94,6 +94,11 @@
   .legend span { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: 0; }
   .read .call { font-size: 22px; font-weight: 650; margin: 2px 0 0; }
   .read .when { color: var(--muted); font-size: 13px; font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .read .call.lines { font-size: 18px; line-height: 1.35; }
+  .read .also { font-size: 14px; margin: 4px 0 2px; }
+  .read p.line { margin: 8px 0 0; font-size: 15px; line-height: 1.45; }
+  .read details.more { margin-top: 10px; }
+  .read details.more[open] > summary { margin-bottom: 4px; }
   .meter { display: inline-flex; gap: 3px; vertical-align: -1px; margin-right: 6px; }
   .meter span { width: 22px; height: 8px; border-radius: 2px; background: var(--line); }
   .meter.high span { background: var(--high); }
@@ -147,7 +152,7 @@
         <section class="card read" id="preCard"></section>
         <section class="card read" id="postCard"></section>
       </div>
-      <section class="card" id="disguiseCard"></section>
+      <section class="card read" id="disguiseCard"></section>
     </div>
 
     <section class="card">
@@ -531,7 +536,8 @@ function rotationText(r) {
 // key: "pre" / "post" judge the structural call, "pre_exact" / "post_exact" the model's coverage
 function verdict(key, question) {
   const saved = (clip.corrections || {})[key];
-  const choices = key.endsWith("_exact") ? calls.variants : calls.shells;
+  const choices = key === "disguise" ? (calls.disguises || [])
+    : key.endsWith("_exact") ? calls.variants : calls.shells;
   const options = [...choices, calls.other]
     .map((c) => `<option${saved && saved.call === c ? " selected" : ""}>${esc(c)}</option>`).join("");
   const said = !saved ? "" : saved.correct ? "You marked this correct."
@@ -550,7 +556,7 @@ function verdict(key, question) {
 }
 async function sendVerdict(key, correct) {
   const [phase, exact] = key.split("_");
-  const body = { phase, target: exact ? "exact" : "shell", correct };
+  const body = { phase, target: phase === "disguise" ? "disguise" : exact ? "exact" : "shell", correct };
   if (!correct) {
     body.call = $(`call-${key}`).value;
     const note = $(`note-${key}`).value.trim();
@@ -584,12 +590,76 @@ function readCard(phase, title, when, r, extra = "") {
     ${extra}`;
 }
 
+// The analyst's card template: Call, Why, How sure in view; Could flip, the numbers behind
+// the read, the model and one labelled Correct / Wrong under Details.
+function manZoneWords(m) {
+  const mz = m && (m.man_zone || [])[0];
+  if (!mz) return "";
+  const p = 100 * mz[1], word = p >= 70 ? "likely" : p >= 55 ? "leans that way" : "a coin flip";
+  return `Man or zone: ${mz[0] === "MAN_COVERAGE" ? "man" : "zone"} ${p.toFixed(0)}%, ${word}.`;
+}
+function caveatList(list) {
+  // repeated off-frame warnings fold into one line with a count
+  const uniq = [...new Set(list || [])].map((c) => c.split(" — ")[0]);
+  const off = uniq.filter((c) => c.includes("off-frame")), rest = uniq.filter((c) => !c.includes("off-frame"));
+  return off.length ? [...rest, `${plural(off.length, "off-frame warning", "off-frame warnings")}: ${off.join("; ")}`] : rest;
+}
+function noteList(title, items) {
+  return items.length ? `<div class="note"><b>${esc(title)}</b><ul>${items.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : "";
+}
+function lineCard(key, title, when, c, details) {
+  if (!c) return `<h3>${title}</h3><div class="muted">not read: the tracked window ends too soon after the snap</div>`;
+  return `<h3>${title} <span class="when">· ${esc(when)}</span></h3>
+    <div class="call lines">${esc(c.call)}</div>
+    ${c.also ? `<div class="also">${esc(c.also)}</div>` : ""}
+    <p class="line"><b>Why:</b> ${esc(c.why)}</p>
+    <p class="line"><b>How sure:</b> ${esc(c.sure)}</p>
+    ${c.disagree ? `<div class="note">${esc(c.disagree)}</div>` : ""}
+    <details class="more"><summary>Details</summary>
+      <p class="line"><b>Could flip:</b> ${esc(c.flip)}</p>
+      ${details}
+      ${verdict(key, `Grades ${c.grades}:`)}
+    </details>`;
+}
+function renderCards(res) {
+  const rep = res.report, cards = rep.cards, after = res.played_frame.t - res.snap.t;
+  const reasons = (r) => r ? `<ul class="reasons">${(r.reasons || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
+  const model = (m, from) => m ? modelSection(m, from) + `<div class="muted" style="font-size:13px">${esc(manZoneWords(m))}</div>` : "";
+  const preDetails = reasons(rep.shown)
+    + model(rep.pre_model, "the sequence model, the look up to the snap")
+    + noteList("Caveats", caveatList(rep.shown ? rep.shown.confidence_why : []));
+  const postDetails = reasons(rep.played)
+    + model(rep.post_model, `the sequence model, snap to +${fmt(rep.post_model ? rep.post_model.t : 0)} s`);
+  const disguiseDetails = `<p class="muted" style="font-size:14px">${esc(rep.disguise_text)}</p>`
+    + noteList("In the first second", (rep.mechanisms || []).map((m) => m.text)
+      .filter((t) => !(rep.disguise_text || "").includes(t)))  // the lead hit is already above
+    + noteList("Caveats", caveatList(rep.caveats))
+    + noteList("Your values disagree with the formation read", res.warnings || []);
+  $("preCard").innerHTML = lineCard("pre", "Pre-snap read", `at the snap, ${fmt(res.snap.t)} s`, cards.pre, preDetails);
+  $("postCard").innerHTML = lineCard("post", "Post-snap read", `read at +${fmt(after)} s`, cards.post, postDetails);
+  $("disguiseCard").innerHTML = lineCard("disguise", "Disguise",
+    `${rep.shown.shell} → ${rep.played ? rep.played.shell : "?"}`, cards.disguise, disguiseDetails);
+}
+
 function renderResult(res) {
   $("toSnap").classList.toggle("hidden", !res); $("toPlayed").classList.toggle("hidden", !res);
   $("reads").classList.toggle("hidden", !res);
   loadOverlay();
   renderAdjustResult(res);
   if (!res) return;
+  const rep = res.report;
+  if (rep.cards && rep.cards.pre) renderCards(res); else renderOldCards(res);
+  document.querySelectorAll("[data-correct]").forEach((b) => b.onclick = () => {
+    if (b.dataset.correct === "1") sendVerdict(b.dataset.key, true);
+    else $(`wrong-${b.dataset.key}`).classList.remove("hidden");
+  });
+  document.querySelectorAll("[data-save]").forEach((b) => b.onclick = () => sendVerdict(b.dataset.save, false));
+  $("toSnap").onclick = () => { $("video").currentTime = res.snap.t; $("video").pause(); };
+  $("toPlayed").onclick = () => { $("video").currentTime = res.played_frame.t; $("video").pause(); };
+}
+
+// a read saved before the cards existed: the reasons as lists, until the clip is re-read
+function renderOldCards(res) {
   const rep = res.report;
   const after = res.played_frame.t - res.snap.t;
   const rotation = rotationText(res.rotation);
@@ -607,13 +677,6 @@ function renderResult(res) {
     ${(rep.mechanisms || []).length ? `<div class="note"><b>In the first second</b><ul>${rep.mechanisms.map((m) => `<li>${esc(m.text)}</li>`).join("")}</ul></div>` : ""}
     ${caveats.length ? `<div class="note"><b>Caveats</b><ul>${caveats.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}
     ${res.warnings.length ? `<div class="note"><b>Your values disagree with the formation read</b><ul>${res.warnings.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}`;
-  document.querySelectorAll("[data-correct]").forEach((b) => b.onclick = () => {
-    if (b.dataset.correct === "1") sendVerdict(b.dataset.key, true);
-    else $(`wrong-${b.dataset.key}`).classList.remove("hidden");
-  });
-  document.querySelectorAll("[data-save]").forEach((b) => b.onclick = () => sendVerdict(b.dataset.save, false));
-  $("toSnap").onclick = () => { $("video").currentTime = res.snap.t; $("video").pause(); };
-  $("toPlayed").onclick = () => { $("video").currentTime = res.played_frame.t; $("video").pause(); };
 }
 
 function renderAdjustResult(res) {
