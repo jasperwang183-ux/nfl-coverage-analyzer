@@ -438,3 +438,28 @@ def test_the_calls_a_person_may_pick(client):
     assert "2-high MOF-open" in calls["shells"] and "4-deep" in calls["shells"]
     assert calls["variants"] == []  # no model bundle in this app
     assert calls["other"] == "Other"
+
+
+def test_the_disguise_card_is_judged_on_its_own_call(client, tmp_path, monkeypatch):
+    log = tmp_path / "c.jsonl"
+    monkeypatch.setattr("nfl_coverage.web.app.CORRECTIONS", log)
+    cid = _with_result(client, tmp_path)
+    wrong = {"phase": "disguise", "target": "disguise", "correct": False, "call": "Cover 3 buzz"}
+    assert client.post(f"/api/clips/{cid}/correction", json=wrong).status_code == 409  # no card
+    res = tmp_path / "web" / cid / "result.json"
+    rep = json.loads(res.read_text())
+    rep["report"]["disguise_label"] = "pole_run"
+    rep["report"]["cards"] = {"disguise": {"call": "Tampa 2 from a two-high look.", "guess": False}}
+    res.write_text(json.dumps(rep))
+    mixed = {"phase": "disguise", "target": "shell", "correct": True}
+    assert client.post(f"/api/clips/{cid}/correction", json=mixed).status_code == 422
+    r = client.post(f"/api/clips/{cid}/correction", json=wrong)
+    assert r.status_code == 200, r.text
+    rec = json.loads(log.read_text().splitlines()[0])
+    assert (rec["call"], rec["model_call"], rec["model_label"]) == (
+        "Cover 3 buzz",
+        "Tampa 2 from a two-high look.",
+        "pole_run",
+    )
+    assert client.get(f"/api/clips/{cid}").json()["corrections"]["disguise"]["correct"] is False
+    assert "Tampa 2" in client.get("/api/calls").json()["disguises"]

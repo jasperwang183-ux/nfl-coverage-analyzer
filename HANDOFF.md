@@ -1,5 +1,26 @@
 # Session Handoff — updated 2026-10-22
 
+## The cards in words: Call / Why / How sure / Could flip (2026-10-22)
+
+The analyst's template, built in `analysis/explain.py` (`report.cards`, written by
+`pipeline.read_tracked`). Each card shows Call, Why and How sure; Could flip, the
+technical reasons, the model bars (with a plain man/zone label), caveats (off-frame
+warnings folded into one counted line) and one labelled Correct / Wrong sit under Details.
+- **Disguise card names the move.** A coverage mechanism names the likeliest coverage for
+  the look shown, with its share and the runner-up when it is 10%+ ("Tampa 2 from a
+  two-high look. Likeliest: Tampa 2, 78% of past plays with this move. Can also be Cover
+  3, 12%"). The shares are `explain.MECHANISM_ODDS`, tallied on the tuning-week phases
+  cache (2018 + 2023 wk 1-13) by the look at the snap. No rule fired: "Best guess:" with
+  the sequence model's odds.
+- **Could flip** is always a distance: the read's nearest threshold, or for a mechanism the
+  runner's nearest rule line and which way he would have to move to break it.
+- **Disagreement** between the rule read and the sequence model gets its own line.
+- **Feedback**: one pair per card; the disguise card logs `phase` / `target` "disguise"
+  with the card's call (`/api/calls` lists `disguises`). Reads saved before this keep the
+  old lists until re-read.
+- `mechanism_hits` now carries the runner's numbers (`HIT_NUMBERS`). Film verify identical
+  to after-center-split. pytest 257 passed.
+
 ## Film center split: middle call from halfway, mechanisms from the ball (2026-10-22)
 
 Film measured every sideways distance from halfway between the ball and the field's

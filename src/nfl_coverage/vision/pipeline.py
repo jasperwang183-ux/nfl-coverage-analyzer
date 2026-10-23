@@ -29,7 +29,8 @@ import numpy as np
 import pandas as pd
 
 from nfl_coverage.analysis.disguise import shell_rotation
-from nfl_coverage.analysis.mechanisms import HIT_COLUMNS, mechanism_hits
+from nfl_coverage.analysis.explain import cards
+from nfl_coverage.analysis.mechanisms import HIT_COLUMNS, HIT_NUMBERS, mechanism_hits
 from nfl_coverage.analysis.report import (
     COUNT_READ,
     MOF_READ,
@@ -565,7 +566,9 @@ def read_tracked(
         snap, los_c, mid, SHOWN_DEEP, "snap", list(shown_caveats), lateral=MIDDLE_LATERAL
     )
     phases = defender_phases(tracks, los=los_c, center=centers.mechanisms, step=step)
-    hits = [_jsonable(h) for h in mechanism_hits(phases)[HIT_COLUMNS].to_dict("records")]
+    hits = [
+        _jsonable(h) for h in mechanism_hits(phases)[HIT_COLUMNS + HIT_NUMBERS].to_dict("records")
+    ]
     coverage_hit = next((h for h in hits if h["kind"] == "coverage"), None)
     played: StructuralRead | None = None
     played_caveats: list[str] = []
@@ -607,6 +610,7 @@ def read_tracked(
     rotation = {
         k: _jsonable(v) for k, v in rot.to_dict().items() if not isinstance(v, (list, dict))
     }
+    report.cards = cards(report, rotation, MIDDLE_LATERAL, f"by +{played_rf * step:.1f} s")
     return ClipRead(
         snap=det,
         snap_index=snap_i,
