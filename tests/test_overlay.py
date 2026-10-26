@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from nfl_coverage.vision.homography import FieldCalibration
-from nfl_coverage.vision.overlay import deep_ids, los_pixels
+from nfl_coverage.vision.overlay import deep_ids, field_view, los_pixels
 
 
 def _read(offense="left", los=40.0):
@@ -52,3 +52,13 @@ def test_los_pixels_run_along_the_field_line_under_a_known_camera():
     assert len(pts) >= 10
     assert np.allclose(pts[:, 0], 400, atol=1)
     assert pts[:, 1].min() <= 1 and pts[:, 1].max() >= 532
+
+
+def test_field_view_keys_players_by_frame_in_canonical_yards():
+    r = _read(offense="right", los=80.0)
+    r.tracks = r.tracks.assign(y=20.0)
+    r.centers = SimpleNamespace(mechanisms=26.0)
+    view = field_view(r)
+    assert (view["los"], view["ball"], view["step"]) == (40.0, 26.0, 0.1)
+    assert view["frames"][0] == [[1, "D", 52.0, 20.0], [2, "D", 46.0, 20.0], [3, "O", 30.0, 20.0]]
+    assert sorted(view["frames"]) == [0, 20]

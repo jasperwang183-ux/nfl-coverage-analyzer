@@ -89,4 +89,25 @@ def overlay_frames(clip: TrackedClip, read: ClipRead) -> dict:
         "shown": rep.shown.shell,
         "played": rep.played.shell if rep.played else None,
         "frames": frames,
+        "field": field_view(read),
+    }
+
+
+def field_view(read: ClipRead) -> dict:
+    """Every tracked player in field yards per rel_frame, for the page's coverage diagram.
+
+    Canonical coordinates (offense moving right), the same frame as the diagram's zones.
+    """
+    los_c = FIELD_LENGTH - read.los if read.offense == "right" else read.los
+    t = read.tracks.drop_duplicates(["nfl_id", "rel_frame"])
+    frames = {
+        int(rel): [[int(r.nfl_id), r.side[0], round(float(r.x), 2), round(float(r.y), 2)]
+                   for r in g.itertuples()]
+        for rel, g in t.groupby("rel_frame")
+    }  # fmt: skip
+    return {
+        "step": read.step,
+        "los": los_c,
+        "ball": read.centers.mechanisms,
+        "frames": frames,
     }

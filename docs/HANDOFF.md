@@ -1,5 +1,24 @@
 # Development log (newest first)
 
+## The coverage diagram card (2026-10-26)
+
+- **`analysis/zones.py`**: the post-snap call's textbook zones (Cover 2 / Tampa 2 / 3 / 4 / 6;
+  Cover 0 / 1 / 2 man draw the deep zones plus each underneath defender on his receiver),
+  the underneath split around the ball. Each defender more than 1 yd past the LOS at +2.0 s
+  is matched to one zone (Hungarian on distance to the zone); "reached" = within 1.5 yd of it
+  by +3.0 s. Cover 6 tries quarters on each side and keeps the better fit. Film duplicates
+  (one player on two track ids, within 1 yd at +2.0 s) count once.
+- **The fit line questions the call** when under 60% reach their zones, a deep zone's
+  defender never gets there, or (man) under 60% of underneath defenders stay within 3.5 yd
+  of one receiver; too few receivers tracked downfield says it cannot check. On the page
+  clips: the right calls fit (CLE @ HOU Cover 4 7/7, Cover 3 6/7; GB @ MIN Cover 2 7/7) and
+  the wrong ones are flagged (GB @ CAR 8:57 Cover 1 man, label Cover 3: 0 of 5 mirrored;
+  the Chiefs Tampa 2 inset called Cover 2 man).
+- **The page**: a fourth card draws it on a canvas, coaching style (defense on top), synced
+  to the video clock from `overlay.json`'s new `field` (canonical yards per rel_frame). Zones
+  fade in after the snap, light up when their defender arrives, dashed lines show where each
+  is headed. Film verify after-front -> after-diagram: unchanged.
+
 ## Film test set, the front and the rush, Spin / Split (2026-10-26)
 
 - **Film test set (2023 wk 16 holdout, scored once; never re-score).** CLE @ HOU play 68

@@ -67,6 +67,7 @@
   .progress > div { height: 100%; background: var(--accent); width: 0; transition: width .4s; }
   .verdict { font-size: 20px; font-weight: 650; margin: 2px 0 4px; }
   .verdict .arrow { color: var(--muted); padding: 0 6px; }
+  #fieldView { display: block; width: 100%; max-width: 640px; margin: 10px auto 6px; border-radius: 8px; cursor: pointer; }
   .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
   .sub { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
   .sub .big { font-size: 16px; font-weight: 650; margin-bottom: 2px; }
@@ -153,6 +154,7 @@
         <section class="card read" id="postCard"></section>
       </div>
       <section class="card read" id="disguiseCard"></section>
+      <section class="card read hidden" id="diagramCard"></section>
     </div>
 
     <section class="card">
@@ -486,6 +488,7 @@ async function loadOverlay() {
 }
 const KIND = { O: ["#1f6feb", 2], D: ["#d93a2b", 2], S: ["#ffd400", 4], L: ["#aaaaaa", 1], X: ["rgba(255,255,255,.35)", 1] };
 function paint() {
+  paintField();
   const v = $("video"), cv = $("overlay");
   const w = v.clientWidth, h = v.clientHeight;
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
@@ -514,6 +517,104 @@ function paint() {
   g.fillStyle = "rgba(0,0,0,.65)"; g.fillRect(8, 8, tw + 16, 26);
   g.fillStyle = "#fff"; g.fillText(label, 16, 26);
 }
+// ---------------------------------------------------------------- the coverage diagram
+// The called coverage's zones (analysis.zones) on a coaching-style field: defense at the top,
+// the offense's left on the left. It follows the video's clock, so play or scrub either.
+const FIELD_W = 53.3, BEHIND = 8, DOWNFIELD = 30, TRAIL = 10, REACH_YD = 1.5;
+const ZONE_RGB = { deep: "76,141,255", under: "255,212,0" };
+function paintField() {
+  const cv = $("fieldView"), d = clip && clip.result && clip.result.report.diagram;
+  const f = overlay && overlay.field;
+  if (!cv || !d || !f) return;
+  const w = cv.clientWidth, h = Math.round(w * (BEHIND + DOWNFIELD) / FIELD_W);
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const g = cv.getContext("2d");
+  const sx = (y) => (FIELD_W - y) / FIELD_W * w;  // field y -> screen x (the offense's view)
+  const sy = (x) => (f.los + DOWNFIELD - x) / (BEHIND + DOWNFIELD) * h;  // depth runs up
+  const yd = w / FIELD_W;
+  g.fillStyle = "#2e7d32"; g.fillRect(0, 0, w, h);
+  g.strokeStyle = "rgba(255,255,255,.28)"; g.lineWidth = 1;
+  for (let x = Math.ceil((f.los - BEHIND) / 5) * 5; x <= f.los + DOWNFIELD; x += 5) {
+    g.beginPath(); g.moveTo(0, sy(x)); g.lineTo(w, sy(x)); g.stroke();
+  }
+  g.strokeStyle = "#90caf9"; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(0, sy(f.los)); g.lineTo(w, sy(f.los)); g.stroke();
+
+  const t = $("video").currentTime, keys = Object.keys(f.frames).map(Number);
+  const lo = Math.min(...keys), hi = Math.max(...keys);
+  const rel = Math.max(lo, Math.min(hi, Math.round((t - overlay.snap_t) / f.step)));
+  const at = (r) => new Map((f.frames[r] || []).map(([id, s, x, y]) => [id, { s, x, y }]));
+  const now = at(rel);
+  const zoneOf = new Map(d.assigned.map((a) => [a.nfl_id, d.zones[a.zone]]));
+  const inZone = (z, p) => p && Math.hypot(Math.max(z.x0 - p.x, 0, p.x - z.x1), Math.max(z.y0 - p.y, 0, p.y - z.y1)) <= REACH_YD;
+
+  // the zones fade in over the first half second after the snap
+  const a = Math.max(0, Math.min(1, rel * f.step / 0.5));
+  if (a > 0) {
+    g.font = "600 11px system-ui, sans-serif"; g.textAlign = "center";
+    d.zones.forEach((z, i) => {
+      const who = d.assigned.find((x) => x.zone === i), filled = who && inZone(z, now.get(who.nfl_id));
+      const rgb = z.deep ? ZONE_RGB.deep : ZONE_RGB.under;
+      const [x0, x1, y0, y1] = [sx(z.y1), sx(z.y0), sy(z.x1), sy(z.x0)];
+      g.fillStyle = `rgba(${rgb},${a * (filled ? 0.42 : 0.14)})`; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+      g.strokeStyle = `rgba(${rgb},${a * (filled ? 0.95 : 0.5)})`; g.lineWidth = filled ? 2 : 1;
+      g.strokeRect(x0 + 1, y0 + 1, x1 - x0 - 2, y1 - y0 - 2);
+      g.fillStyle = `rgba(255,255,255,${a * 0.85})`; g.fillText(z.name, (x0 + x1) / 2, y0 + 14);
+    });
+  }
+  // trails, then where each defender is headed (dashed, until he is in his zone), then the men
+  for (let r = Math.max(lo, rel - TRAIL); r < rel; r++) {
+    const p0 = at(r), p1 = at(r + 1);
+    for (const [id, p] of p1) {
+      const q = p0.get(id); if (!q) continue;
+      g.strokeStyle = p.s === "O" ? "rgba(100,181,246,.5)" : "rgba(239,83,80,.5)"; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(sx(q.y), sy(q.x)); g.lineTo(sx(p.y), sy(p.x)); g.stroke();
+    }
+  }
+  if (rel > 0) {
+    g.setLineDash([4, 4]); g.lineWidth = 1.2;
+    for (const [id, z] of zoneOf) {
+      const p = now.get(id); if (!p || inZone(z, p)) continue;
+      const tx = Math.max(z.x0, Math.min(z.x1, p.x)), ty = Math.max(z.y0, Math.min(z.y1, p.y));
+      g.strokeStyle = `rgba(${z.deep ? ZONE_RGB.deep : ZONE_RGB.under},.9)`;
+      g.beginPath(); g.moveTo(sx(p.y), sy(p.x)); g.lineTo(sx(ty), sy(tx)); g.stroke();
+    }
+    g.setLineDash([]);
+    g.strokeStyle = "rgba(255,255,255,.85)"; g.lineWidth = 1.5;
+    for (const m of d.matchups) {
+      const p = now.get(m.nfl_id), q = now.get(m.receiver); if (!p || !q) continue;
+      g.beginPath(); g.moveTo(sx(p.y), sy(p.x)); g.lineTo(sx(q.y), sy(q.x)); g.stroke();
+    }
+  }
+  for (const [id, p] of now) {
+    const z = rel > 0 && zoneOf.get(id);
+    g.beginPath(); g.arc(sx(p.y), sy(p.x), Math.max(4, yd * 0.55), 0, 2 * Math.PI);
+    g.fillStyle = p.s === "O" ? "#64b5f6" : "#ef5350"; g.fill();
+    g.lineWidth = z ? 2.5 : 1; g.strokeStyle = z ? `rgb(${z.deep ? ZONE_RGB.deep : ZONE_RGB.under})` : "#fff"; g.stroke();
+  }
+  const clock = rel === 0 ? "at the snap" : `${rel > 0 ? "+" : ""}${(rel * f.step).toFixed(1)} s`;
+  g.font = "600 13px system-ui, sans-serif"; g.textAlign = "left"; g.fillStyle = "#fff";
+  g.fillText(rel < 0 ? `${clock}  before the snap` : clock, 10, 20);
+}
+function diagramCard(res) {
+  const d = res.report.diagram;
+  if (!d) return "";
+  if (!d.coverage) return `<h3>Coverage diagram</h3><div class="muted">${esc(d.fit)}</div>`;
+  const n = d.zones.length, deep = d.zones.filter((z) => z.deep).length;
+  const shape = d.kind === "man"
+    ? `${plural(deep, "deep zone", "deep zones")} and each man on his receiver`
+    : `${plural(deep, "deep zone", "deep zones")} and ${n - deep} underneath`;
+  return `<h3>Coverage diagram <span class="when">· ${esc(d.coverage)}, drawn from the post-snap call</span></h3>
+    <div class="call lines">${esc(d.coverage)}: ${esc(shape)}.</div>
+    <p class="line"><b>Fit:</b> ${esc(d.fit)}</p>
+    <canvas id="fieldView" title="Click to play or pause the clip"></canvas>
+    <div class="legend muted" style="font-size:13px;justify-content:center">
+      <span style="background:#64b5f6"></span>offense<span style="background:#ef5350"></span>defense
+      <span style="background:rgb(${ZONE_RGB.deep})"></span>deep zone<span style="background:rgb(${ZONE_RGB.under})"></span>underneath zone
+      ${d.kind === "man" ? `<span style="background:#fff;border:1px solid var(--line)"></span>man on his receiver` : ""}</div>
+    <div class="muted" style="font-size:13px;margin-top:6px">Moves with the video. The zones are the textbook shape for the call, not measured from the play; a dashed line runs from each defender to his zone until he is in it, and the zone lights up when he gets there.</div>`;
+}
+
 function loop() { paint(); if (!$("video").paused) requestAnimationFrame(loop); }
 ["play", "seeked", "timeupdate", "loadedmetadata"].forEach((ev) => $("video").addEventListener(ev, () => (ev === "play" ? loop() : paint())));
 window.addEventListener("resize", paint);
@@ -667,6 +768,18 @@ function renderCards(res) {
   $("postCard").innerHTML = lineCard("post", "Post-snap read", `read at +${fmt(after)} s`, cards.post, postDetails);
   $("disguiseCard").innerHTML = lineCard("disguise", "Disguise",
     `${rep.shown.shell} → ${rep.played ? rep.played.shell : "?"}`, cards.disguise, disguiseDetails);
+  const diagram = diagramCard(res);
+  $("diagramCard").innerHTML = diagram;
+  $("diagramCard").classList.toggle("hidden", !diagram);
+  if ($("fieldView")) {
+    $("fieldView").onclick = () => {
+      const v = $("video");
+      if (!v.paused) return v.pause();
+      if (v.currentTime >= res.played_frame.t + 1.5) v.currentTime = Math.max(0, res.snap.t - 1);
+      v.play();
+    };
+    paintField();
+  }
 }
 
 function renderResult(res) {
@@ -676,6 +789,7 @@ function renderResult(res) {
   renderAdjustResult(res);
   if (!res) return;
   const rep = res.report;
+  $("diagramCard").classList.add("hidden");  // a read from before the diagram has none
   if (rep.cards && rep.cards.pre) renderCards(res); else renderOldCards(res);
   document.querySelectorAll("[data-correct]").forEach((b) => b.onclick = () => {
     if (b.dataset.correct === "1") sendVerdict(b.dataset.key, true);
