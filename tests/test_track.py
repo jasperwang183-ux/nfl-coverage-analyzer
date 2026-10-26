@@ -192,3 +192,20 @@ def test_film_centers_keep_each_rule_on_its_tuned_reference():
     none = film_centers(None, offense_y=30.0)
     assert none.middle == none.mechanisms == 30.0
     assert "no ball spot" in none.middle_from
+
+
+def test_short_gaps_are_bridged_and_long_ones_are_not():
+    import pandas as pd
+
+    from nfl_coverage.vision.track import fill_short_gaps
+
+    rows = [(1, f, 10.0 + f, 20.0, "Defense") for f in (0, 1, 2, 4)]  # frame 3 missed
+    rows += [(2, f, 30.0, 20.0, "Defense") for f in (0, 1, 6)]  # 4 frames missing: too long
+    df = pd.DataFrame(rows, columns=["nfl_id", "rel_frame", "x", "y", "side"])
+    df["frame_id"] = df["rel_frame"] + 1
+    out = fill_short_gaps(df).sort_values(["nfl_id", "rel_frame"])
+    one = out[out["nfl_id"] == 1]
+    assert list(one["rel_frame"]) == [0, 1, 2, 3, 4]
+    filled = one[one["rel_frame"] == 3].iloc[0]
+    assert filled["x"] == pytest.approx(13.0) and filled["side"] == "Defense"
+    assert list(out[out["nfl_id"] == 2]["rel_frame"]) == [0, 1, 6]

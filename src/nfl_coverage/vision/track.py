@@ -52,6 +52,11 @@ SNAP_SIDELINE_CLEAR = 4.0
 # mugged linebacker crouches at the line like a tackle (SF's Warner, 2023 wk 2, measured
 # 0.9 yd deep on film, as crouched as the tackles beside him) and then runs the middle.
 # Tracking data carries every linebacker and no linemen, so keep the ones who drop.
+# frames: a body missing for this many frames or fewer is bridged by a straight line.
+# Tracking data never drops a frame; film drops one when a detection is missed, and the
+# rules read a defender's landmark on one exact frame (+2.0 s), so a single missed box there
+# silenced the buzz on 2023 wk 17 GB @ MIN play 62 (both safeties lost frame 20 only).
+MAX_GAP_FRAMES = 3
 DROPPER_GAIN_YD = 4.0
 DROPPER_WINDOW_S = 2.5
 
@@ -292,6 +297,30 @@ def _linemen(df: pd.DataFrame, line_ids: set[int], step_s: float) -> set[int]:
     return {int(i) for i in d["nfl_id"].unique()} - droppers
 
 
+def fill_short_gaps(df: pd.DataFrame, max_gap: int = MAX_GAP_FRAMES) -> pd.DataFrame:
+    """Each body's missing frames, `max_gap` or fewer in a row, filled on the line between the
+    frames either side. Longer gaps stay gaps: a fill there would invent a path."""
+    new = []
+    for _, g in df.groupby("nfl_id", sort=False):
+        rf = g["rel_frame"].to_numpy()
+        for j in np.flatnonzero((np.diff(rf) > 1) & (np.diff(rf) <= max_gap + 1)):
+            a, b = g.iloc[j], g.iloc[j + 1]
+            span = int(b["rel_frame"] - a["rel_frame"])
+            for k in range(1, span):
+                w = k / span
+                row = a.to_dict()
+                row.update(
+                    rel_frame=int(a["rel_frame"]) + k,
+                    frame_id=int(a["frame_id"]) + k,
+                    x=float(a["x"] + w * (b["x"] - a["x"])),
+                    y=float(a["y"] + w * (b["y"] - a["y"])),
+                )
+                new.append(row)
+    if not new:
+        return df
+    return pd.concat([df, pd.DataFrame(new)], ignore_index=True)
+
+
 def canonical_tracks(
     frames: list[TrackedFrame],
     calibs: list[FieldCalibration],
@@ -361,6 +390,7 @@ def canonical_tracks(
     if drop_line:
         df = df[~df["nfl_id"].isin(_linemen(df, sides.line_ids, step_s))]
     df = df.sort_values(["nfl_id", "rel_frame"]).reset_index(drop=True)
+    df = fill_short_gaps(df).sort_values(["nfl_id", "rel_frame"]).reset_index(drop=True)
     g = df.groupby("nfl_id")
     dx = g["x"].diff()
     dy = g["y"].diff()
