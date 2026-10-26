@@ -1,5 +1,28 @@
 # Session Handoff — updated 2026-10-22
 
+## Final film test, term-first cards, short track gaps bridged (2026-10-25)
+
+- **Final film test (holdout, scored once 2026-10-25; never re-score).** 2023 wk 17 GB @
+  MIN Q1 14:56 (page clip `b8ca16923d21`) = play 62 of 2023123114, label Cover 2 zone; shape
+  match 1.15 yd vs 1.74 next. Read frozen before the label was opened: post-snap sequence
+  model Cover 2 zone 74% (right); pre-snap model Cover 3 61% (wrong); the rule read the
+  played middle closed (wrong vs the label) and so did the tracking data on the same play;
+  snap depths film 14.9 / 9.2 vs tracking 14.5 / 9.1. The reads after the changes below
+  (the buzz now fires, the model's call 88%) were made after scoring and do not count.
+- **Short track gaps bridged** (`track.fill_short_gaps`, `MAX_GAP_FRAMES` 3, inside
+  `canonical_tracks`): both safeties of play 62 lost exactly frame 20, the +2.0 s landmark
+  the rules read, so no mechanism could fire on film; tracking data never drops a frame.
+  Film verify after-cards vs after-gap-fill: identical except sf-lar-clip2's sequence-model
+  top (Cover 2 man -> Cover 1 man; the analyst's call is Cover 3).
+- **Cards lead with the term** (analyst): pre-snap the shell ("Cover 2 shell (two safeties
+  deep, middle of the field open)"); post-snap the coverage, from a named mechanism, else
+  the sequence model (graded as the exact call), else the shell, with the rule read's
+  structure in parentheses and a line when it disagrees; the disguise card leads with the
+  tactic ("Safety buzz: Cover 3 buzz from a Cover 2 shell", or "Best guess: Safety rotation
+  (Cover 2 shell rotated to single-high)" when no mechanism fired). A gloss line explains
+  the term once. Coverage names carry man / zone. Wording fix: two deep players sharing the
+  middle (partner under the 8 yd split) no longer read "no one is over the middle".
+
 ## The cards in words: Call / Why / How sure / Could flip (2026-10-22)
 
 The analyst's template, built in `analysis/explain.py` (`report.cards`, written by

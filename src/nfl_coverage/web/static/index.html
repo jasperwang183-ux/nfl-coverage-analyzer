@@ -611,6 +611,7 @@ function lineCard(key, title, when, c, details) {
   if (!c) return `<h3>${title}</h3><div class="muted">not read: the tracked window ends too soon after the snap</div>`;
   return `<h3>${title} <span class="when">· ${esc(when)}</span></h3>
     <div class="call lines">${esc(c.call)}</div>
+    ${c.gloss ? `<div class="muted also">${esc(c.gloss)}</div>` : ""}
     ${c.also ? `<div class="also">${esc(c.also)}</div>` : ""}
     <p class="line"><b>Why:</b> ${esc(c.why)}</p>
     <p class="line"><b>How sure:</b> ${esc(c.sure)}</p>
@@ -618,7 +619,7 @@ function lineCard(key, title, when, c, details) {
     <details class="more"><summary>Details</summary>
       <p class="line"><b>Could flip:</b> ${esc(c.flip)}</p>
       ${details}
-      ${verdict(key, `Grades ${c.grades}:`)}
+      ${verdict(c.grades_key || key, `Grades ${c.grades}:`)}
     </details>`;
 }
 function renderCards(res) {

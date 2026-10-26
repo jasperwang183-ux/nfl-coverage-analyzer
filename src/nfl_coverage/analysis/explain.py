@@ -1,13 +1,16 @@
 """The cards in words: Call, Why, How sure, Could flip (the analyst's template, 2026-10-22).
 
 Every card says the same four things in the same order:
-  - call: the answer in plain words, the football name in parentheses;
+  - call: the football term first, the plain words in parentheses (analyst, 2026-10-25:
+    "lead with the term"): the shell before the snap, the coverage after it, the disguise
+    tactic on the disguise card;
   - why: the two or three numbers that decided it, each tied to a landmark;
   - sure: one level plus the single biggest reason;
   - flip: the nearest threshold as a distance, the line a reader can check on film.
 `also` names the likeliest coverage and the runner-up when a call has two readings,
 `disagree` says when the sequence model leans another way, `guess` marks a disguise call no
-rule fired for ("Best guess:"). Football names are glossed on first use across the cards.
+rule fired for ("Best guess:"), `gloss` explains the call's term the first time the cards
+use it.
 Mechanism distances are "off the ball"; the middle call's are from its own reference
 (`lateral`, the film's middle-of-field point).
 """
@@ -17,6 +20,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 
 from nfl_coverage.analysis.report import CoverageReport, ModelRead, StructuralRead
+from nfl_coverage.analysis.shell import MOF_HALFWIDTH, MOF_PARTNER_MIN
 
 GLOSS = {
     "Cover 0": "no deep safety, man across with extra rushers",
@@ -30,25 +34,36 @@ GLOSS = {
     "Cover 3 buzz": "a safety rotates down to the curl-flat",
 }
 
-# (deep count, middle closed) -> plain words, the shell's football name
-SHELL_WORDS = {
-    (0, False): ("Nobody deep", "Cover 0"),
-    (0, True): ("Nobody deep", "Cover 0"),
-    (1, True): ("One safety deep, over the middle", "Cover 1 or Cover 3 shell"),
-    (1, False): ("One deep defender, off the middle", "a shaded single-high shell"),
-    (2, False): ("Two safeties deep, middle of the field open", "Cover 2, 4 or 6 shell"),
-    (2, True): ("Two deep, one of them over the middle", "a rotated two-high shell"),
-    (3, True): ("Three deep, middle closed", "Cover 3"),
-    (3, False): ("Three deep, middle open", "a quarters-halves rotation"),
-    (4, True): ("Four deep", "Cover 4, quarters"),
-    (4, False): ("Four deep", "Cover 4, quarters"),
+# (deep count, middle closed) -> the shell's term, plain words
+SHELL_TERMS = {
+    (0, False): ("Cover 0 shell", "nobody deep"),
+    (0, True): ("Cover 0 shell", "nobody deep"),
+    (1, True): ("Single-high shell", "one safety deep, over the middle"),
+    (1, False): ("Shaded single-high shell", "one deep defender, off the middle"),
+    (2, False): ("Cover 2 shell", "two safeties deep, middle of the field open"),
+    (2, True): ("Rotated two-high shell", "two deep, one of them over the middle"),
+    (3, True): ("Three-deep shell", "three deep, middle closed"),
+    (3, False): ("Split three-deep shell", "three deep, middle open"),
+    (4, True): ("Four-deep shell", "four deep across"),
+    (4, False): ("Four-deep shell", "four deep across"),
 }
-# plain words for a played family a mechanism names
-NAMED_WORDS = {
-    "Tampa 2": "Two deep halves, a linebacker running the deep middle",
-    "Cover 2 trap": "Two deep halves, a corner squatting the flat",
+# a disguise mechanism's tactic, as the disguise card leads with it
+TACTICS = {
+    "pole_run": "Pole run",
+    "late_post": "Late post safety",
+    "corner_roll_up": "Corner roll-up",
+    "buzz_soft": "Safety buzz",
 }
-LOOK_WORDS = {"two-high": "two-high", "single-high": "single-high", "0-high": "zero-high"}
+# the shell rotation's tactic when no mechanism fired (`disguise.shell_rotation` labels)
+ROTATION_TACTICS = {
+    "rotate_to_mof_closed": ("Safety rotation", "{shown} rotated to single-high"),
+    "rotate_to_mof_open": ("Safety split", "{shown} split to two-high"),
+    "rotation_down": ("Rotation down", "a deep defender came down out of the {shown}"),
+    "rotation_up": ("Bail", "more defenders deep than the {shown} showed"),
+    "corner_bail": ("No disguise", "the {shown} held; the corners bailed as its technique"),
+    "threshold_flicker": ("No disguise", "the {shown} held"),
+    "": ("No disguise", "the {shown} held"),
+}
 
 # What each coverage mechanism was on the tuning weeks (2018 and 2023 weeks 1-13, ball-spot
 # phases, `data/processed/phases_tuning_ball.parquet`, 2026-10-22), by the look at the
@@ -65,7 +80,7 @@ MECHANISM_ODDS = {
 # a mechanism's own name for a label it points to
 MECHANISM_NAMES = {
     ("pole_run", "COVER_2_ZONE"): "Tampa 2",
-    ("pole_run", "COVER_3_ZONE"): "Cover 3 (a hook defender carrying the seam)",
+    ("pole_run", "COVER_3_ZONE"): "Cover 3 zone (a hook defender carrying the seam)",
     ("corner_roll_up", "COVER_2_ZONE"): "Cover 2 trap",
     ("buzz_soft", "COVER_3_ZONE"): "Cover 3 buzz",
 }
@@ -86,6 +101,8 @@ class Card:
     sure: str
     flip: str
     grades: str  # what the card's Correct / Wrong judges
+    grades_key: str  # which verdict: pre / post (the shell), post_exact (the coverage), disguise
+    gloss: str = ""  # the call's term explained, the first time the cards use it
     also: str = ""
     disagree: str = ""
     guess: bool = False
@@ -97,11 +114,11 @@ class _Glosser:
     def __init__(self) -> None:
         self.seen: set[str] = set()
 
-    def __call__(self, name: str, inside: bool = False) -> str:
-        """`inside`: the name already sits in parentheses, so the gloss follows a colon."""
+    @staticmethod
+    def _key(name: str) -> str | None:
         if " or " in name:  # a list of coverages: glossing one would mislead
-            return name
-        key = next(
+            return None
+        return next(
             (
                 k
                 for k in sorted(GLOSS, key=len, reverse=True)
@@ -109,6 +126,10 @@ class _Glosser:
             ),
             None,
         )
+
+    def __call__(self, name: str, inside: bool = False) -> str:
+        """`inside`: the name already sits in parentheses, so the gloss follows a colon."""
+        key = self._key(name)
         if key is None or key in self.seen:
             return name
         self.seen.add(key)
@@ -116,18 +137,25 @@ class _Glosser:
             return f"{name}; {GLOSS[key]}"
         return f"{name}: {GLOSS[key]}" if inside else f"{name} ({GLOSS[key]})"
 
+    def note(self, name: str) -> str:
+        """The gloss line under a call ("Cover 2: two deep safeties, each with a half"), once."""
+        key = self._key(name)
+        if key is None or key in self.seen:
+            return ""
+        self.seen.add(key)
+        return f"{key}: {GLOSS[key]}"
+
 
 def coverage_name(label: str) -> str:
-    """COVER_2_MAN -> Cover 2 man; COVER_3_ZONE -> Cover 3."""
+    """COVER_2_MAN -> Cover 2 man; COVER_3_ZONE -> Cover 3 zone."""
     parts = label.split("_")
     if len(parts) == 3 and parts[0] == "COVER":
-        name = f"Cover {parts[1]}"
-        return f"{name} man" if parts[2] == "MAN" and parts[1] == "2" else name
+        return f"Cover {parts[1]} {parts[2].lower()}"
     return label.replace("_", " ").title()
 
 
 def _shell(read: StructuralRead) -> tuple[str, str]:
-    return SHELL_WORDS[(min(read.n_deep, 4), read.mof_closed)]
+    return SHELL_TERMS[(min(read.n_deep, 4), read.mof_closed)]
 
 
 def _look(read: StructuralRead) -> str:
@@ -153,6 +181,12 @@ def _middle_words(read: StructuralRead, lateral: str) -> str:
         return (
             f"the closest is {off[0]:.1f} yd {lateral} and the next {off[1]:.1f} yd away, so "
             "one of them is over the middle"
+        )
+    if off[0] <= MOF_HALFWIDTH:  # one is in the middle, but his partner is not split away
+        return (
+            f"the closest is {off[0]:.1f} yd {lateral} but the other only {off[1]:.1f} yd, "
+            f"under the {MOF_PARTNER_MIN:g} yd split a single-high look needs, so they share "
+            "the middle as two high"
         )
     return f"the closest is {off[0]:.1f} yd {lateral}, so no one is over the middle"
 
@@ -182,23 +216,28 @@ def _flip(read: StructuralRead) -> str:
     return f"The middle-{side} call is {read.mof_margin:.1f} yd from flipping to {other}."
 
 
-def _disagree(read: StructuralRead, model: ModelRead | None) -> str:
-    if model is None or not model.variant:
-        return ""
-    label, p = model.variant[0]
+def _differs(read: StructuralRead, label: str) -> bool:
+    """The rule read's structure and a coverage label point different ways."""
     closed = MOF_CLOSED.get(label)
     if label == "COVER_0_MAN":
-        differs = read.n_deep > 0
-    elif closed is None or read.n_deep == 0:
-        differs = closed is not None
-    else:
-        differs = closed != (read.mof_closed and read.n_deep < 4)
-    if not differs:
+        return read.n_deep > 0
+    if closed is None or read.n_deep == 0:
+        return closed is not None
+    return closed != (read.mof_closed and read.n_deep < 4)
+
+
+def _middle(label: str) -> str:
+    closed = MOF_CLOSED.get(label)
+    return "middle-closed" if closed else "middle-open" if closed is False else "no-deep"
+
+
+def _disagree(read: StructuralRead, model: ModelRead | None) -> str:
+    if model is None or not model.variant or not _differs(read, model.variant[0][0]):
         return ""
+    label, p = model.variant[0]
     return (
         f"The model disagrees: it leans {coverage_name(label)} ({100 * p:.0f}%), a "
-        f"{'middle-closed' if closed else 'middle-open' if closed is False else 'no-deep'} "
-        "coverage."
+        f"{_middle(label)} coverage."
     )
 
 
@@ -227,13 +266,15 @@ def _read_card(
     when: str,
     deep_line: str,
     grades: str,
+    key: str,
     extra: str = "",
     name: str | None = None,
     middle: str | None = None,
 ) -> Card:
-    words, shell_name = _shell(read)
-    words = NAMED_WORDS.get(name, words)
-    call = f"{words} ({gloss(name or shell_name, inside=True)})."
+    """`name`: the coverage to lead with (post-snap); None leads with the shell."""
+    term, plain = _shell(read)
+    inner = term if term.startswith("Cover") else term[0].lower() + term[1:]
+    call = f"{name} ({inner})." if name else f"{term} ({plain})."
     if read.n_deep == 0:
         why = f"Nobody is {deep_line} deep {when}."
     else:
@@ -245,7 +286,16 @@ def _read_card(
         )
     if extra:
         why += f" {extra[0].upper()}{extra[1:]}."
-    return Card(call, why, _sure(read), _flip(read), grades, disagree=_disagree(read, model))
+    return Card(
+        call,
+        why,
+        _sure(read),
+        _flip(read),
+        grades,
+        key,
+        gloss=gloss.note(name or term),
+        disagree=_disagree(read, model),
+    )
 
 
 # ------------------------------------------------------------------ the disguise card
@@ -321,7 +371,7 @@ def _mechanism_flip(h: dict) -> str:
 def _disguise_card(rep: CoverageReport, rotation: dict, gloss: _Glosser) -> Card:
     shown, played = rep.shown, rep.played
     look = _look(shown)
-    shown_words = f"{LOOK_WORDS[look]} look"
+    shell = _shell(shown)[0]
     grades = "the disguise call"
     hit = next((h for h in rep.mechanisms if h.get("kind") == "coverage"), None)
     model = rep.post_model
@@ -338,7 +388,7 @@ def _disguise_card(rep: CoverageReport, rotation: dict, gloss: _Glosser) -> Card
         pct = names[0][1] if names else 0
         level = "Likely" if pct >= 75 else "Leans" if pct >= 50 else "Lean only"
         sure = (
-            f"{level}. When this move came from a {LOOK_WORDS[look]} look on past plays it was "
+            f"{level}. When this move came from a {look} look on past plays it was "
             f"{best} {pct}% of the time ({n} plays)."
             if names
             else "Lean only. This move was too rare from this look to count."
@@ -347,22 +397,21 @@ def _disguise_card(rep: CoverageReport, rotation: dict, gloss: _Glosser) -> Card
         if model and model.variant and odds and model.variant[0][0] not in dict(odds):
             label, p = model.variant[0]
             disagree = f"The model disagrees: it leans {coverage_name(label)} ({100 * p:.0f}%)."
+        tactic = TACTICS.get(m, m.replace("_", " ").capitalize())
         return Card(
-            call=f"{best} from a {shown_words}.",
+            call=f"{tactic}: {best} from a {shell}.",
             why=_story(hit),
             sure=sure,
             flip=_mechanism_flip(hit),
             grades=grades,
+            grades_key="disguise",
+            gloss=gloss.note(best),
             also=also,
             disagree=disagree,
         )
 
-    played_words = _shell(played)[0].lower() if played else "no post-snap read"
-    label = rep.disguise_label
-    if not label or label in ("corner_bail", "threshold_flicker"):
-        call = f"Best guess: no disguise. The {shown_words} held ({played_words})."
-    else:
-        call = f"Best guess: showed {_shell(shown)[0].lower()}, played {played_words}."
+    tactic, desc = ROTATION_TACTICS.get(rep.disguise_label, (rep.disguise_label, "{shown}"))
+    call = f"Best guess: {tactic} ({desc.format(shown=shell)})."
     moved = _rotation_words(rotation)
     why = (f"After the snap {moved}. " if moved else "Nobody moved 3 yd after the snap. ") + (
         "No disguise rule fired in the first second."
@@ -380,6 +429,7 @@ def _disguise_card(rep: CoverageReport, rotation: dict, gloss: _Glosser) -> Card
         sure="Guess. No named rule fired, so this is read from where the defenders ended up.",
         flip=flip,
         grades=grades,
+        grades_key="disguise",
         also=also,
         guess=True,
     )
@@ -392,19 +442,36 @@ def cards(
     gloss = _Glosser()
     pre = _read_card(
         rep.shown, rep.pre_model, lateral, gloss, "at the snap", "9 yd or more",
-        "the pre-snap shell (how many deep, middle open or closed)",
+        "the pre-snap shell (how many deep, middle open or closed)", "pre",
     )  # fmt: skip
     out = {"pre": pre}
     if rep.played is not None:
+        played, model = rep.played, rep.post_model
         hit = next((h for h in rep.mechanisms if h.get("kind") == "coverage"), None)
-        name = None
-        if hit and ("Tampa 2" in rep.played.family or "trap" in rep.played.family):
-            name = "Tampa 2" if "Tampa 2" in rep.played.family else "Cover 2 trap"
-        mid = rep.played.frame.split(" (middle)")[0]
-        middle = f"the middle reads {'closed' if rep.played.mof_closed else 'open'} at {mid}"
-        out["post"] = _read_card(
-            rep.played, rep.post_model, lateral, gloss, played_when, "at or headed past 10.5 yd",
-            "the played shell", extra=_rotation_words(rotation), name=name, middle=middle,
-        )  # fmt: skip
+        mid = played.frame.split(" (middle)")[0]
+        middle = f"the middle reads {'closed' if played.mof_closed else 'open'} at {mid}"
+        common = (played, model, lateral, gloss, played_when, "at or headed past 10.5 yd")
+        extra = _rotation_words(rotation)
+        if hit and ("Tampa 2" in played.family or "trap" in played.family):
+            # a mechanism named the family: lead with it, the model checks it
+            name = "Tampa 2" if "Tampa 2" in played.family else "Cover 2 trap"
+            post = _read_card(*common, f"the played coverage ({name})", "post",
+                              extra=extra, name=name, middle=middle)  # fmt: skip
+        elif model is not None and model.variant:
+            # the sequence model names the coverage; the rule read gives its structure
+            label, p = model.variant[0]
+            name = coverage_name(label)
+            post = _read_card(*common, f"the played coverage ({name})", "post_exact",
+                              extra=extra, name=name, middle=middle)  # fmt: skip
+            post.disagree = ""
+            if _differs(played, label):
+                post.disagree = (
+                    "The rule read disagrees: it reads the middle "
+                    f"{'closed' if played.mof_closed else 'open'}, against {name}, a "
+                    f"{_middle(label)} coverage ({100 * p:.0f}% per the model)."
+                )
+        else:
+            post = _read_card(*common, "the played shell", "post", extra=extra, middle=middle)
+        out["post"] = post
     out["disguise"] = _disguise_card(rep, rotation, gloss)
     return {k: asdict(v) for k, v in out.items()}
