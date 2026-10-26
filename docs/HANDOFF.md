@@ -1,4 +1,4 @@
-# Session Handoff — updated 2026-10-22
+# Development log (newest first)
 
 ## Film test set, the front and the rush, Spin / Split (2026-10-26)
 

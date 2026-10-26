@@ -26,7 +26,7 @@ benchmark.** Models never train on film; film is inference-time input converted
 into the same canonical frame schema (`data/standardize.py`). The player-filtering
 stage exists because film shows all 22 + officials while the tracking datasets
 carry coverage-relevant players only (~7 defenders/play) — without it the model
-sees out-of-distribution inputs (proved on the first real screenshot, HANDOFF.md).
+sees out-of-distribution inputs (proved on the first real screenshot, docs/HANDOFF.md).
 
 ## Feature engineering (`src/nfl_coverage/features/`)
 

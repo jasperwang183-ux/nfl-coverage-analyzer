@@ -58,4 +58,4 @@ for this project, not for redistribution.
 ```
 
 The calibrations were fitted with `scripts/calibrate_auto.py` from the painted markings
-(yard lines, hash rows, sideline, numbers); the line identities used are in HANDOFF.md.
+(yard lines, hash rows, sideline, numbers); the line identities used are in docs/HANDOFF.md.
