@@ -607,6 +607,32 @@ function caveatList(list) {
 function noteList(title, items) {
   return items.length ? `<div class="note"><b>${esc(title)}</b><ul>${items.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>` : "";
 }
+// the front and the rush: nothing checks it on film, so a person can say what they saw
+function pressureBlock(c) {
+  const saved = (clip.corrections || {}).pressure;
+  const said = saved ? `You entered a ${esc(saved.front)} front, ${saved.rushers} rushed.` : "";
+  return `<div class="note"><b>Front and rush:</b> ${esc(c.pressure)}
+      <div class="muted" style="margin-top:4px">${esc(c.pressure_sure)}</div>
+      <div class="verdictRow" style="margin-top:6px">
+        <label>Front</label><input type="text" id="pf-front" size="5" style="width:5em" placeholder="4-3" value="${esc(saved ? saved.front : "")}">
+        <label>Rushed</label><input type="number" id="pf-rush" min="0" max="11" style="width:4em" value="${saved ? saved.rushers : ""}">
+        <button data-pressure="1">Save</button>
+        <span class="muted" id="said-pressure">${said}</span>
+      </div></div>`;
+}
+async function savePressure() {
+  const body = { front: $("pf-front").value.trim(), rushers: Number($("pf-rush").value) };
+  if (!/^\d{1,2}-\d{1,2}$/.test(body.front) || $("pf-rush").value === "") {
+    $("said-pressure").textContent = "Enter a front like 4-3 and how many rushed.";
+    return;
+  }
+  $("said-pressure").textContent = "Saving...";
+  try {
+    await post(`/api/clips/${clip.id}/pressure`, body);
+    clip = await api(`/api/clips/${clip.id}`);
+    render();
+  } catch (e) { $("said-pressure").innerHTML = `<span style="color:var(--low)">${esc(e.message)}</span>`; }
+}
 function lineCard(key, title, when, c, details) {
   if (!c) return `<h3>${title}</h3><div class="muted">not read: the tracked window ends too soon after the snap</div>`;
   return `<h3>${title} <span class="when">· ${esc(when)}</span></h3>
@@ -616,6 +642,7 @@ function lineCard(key, title, when, c, details) {
     <p class="line"><b>Why:</b> ${esc(c.why)}</p>
     <p class="line"><b>How sure:</b> ${esc(c.sure)}</p>
     ${c.disagree ? `<div class="note">${esc(c.disagree)}</div>` : ""}
+    ${c.pressure ? pressureBlock(c) : ""}
     <details class="more"><summary>Details</summary>
       <p class="line"><b>Could flip:</b> ${esc(c.flip)}</p>
       ${details}
@@ -655,6 +682,7 @@ function renderResult(res) {
     else $(`wrong-${b.dataset.key}`).classList.remove("hidden");
   });
   document.querySelectorAll("[data-save]").forEach((b) => b.onclick = () => sendVerdict(b.dataset.save, false));
+  document.querySelectorAll("[data-pressure]").forEach((b) => b.onclick = savePressure);
   $("toSnap").onclick = () => { $("video").currentTime = res.snap.t; $("video").pause(); };
   $("toPlayed").onclick = () => { $("video").currentTime = res.played_frame.t; $("video").pause(); };
 }

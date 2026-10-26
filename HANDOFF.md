@@ -1,5 +1,29 @@
 # Session Handoff — updated 2026-10-22
 
+## Film test set, the front and the rush, Spin / Split (2026-10-26)
+
+- **Film test set (2023 wk 16 holdout, scored once; never re-score).** CLE @ HOU play 68
+  (Cover 4) and 778 (Cover 3), GB @ CAR play 394 (Cover 3, a two-high spin): the rule's
+  played middle, the pre- and post-snap models and the disguise read are each right on 3 of
+  4 scored film plays with play 62. The post-snap model missed the spin (Cover 1 man 76%);
+  the rule read caught it. Excluded: GB @ CAR Q1 9:32 (no labeled play at that clock) and
+  CLE @ HOU Q2 0:22 (the capture starts after the snap). Two page inputs were needed: the
+  window start (the automatic window began after the snap) and a typed snap after a
+  paused-video start. Worth fixing on the page: notice a paused start, start earlier.
+- **Front and rush** (`analysis/front.py`, the analyst's definitions): at the line = feet
+  within 2.5 yd of the LOS inside the box (the analyst's 1 yd is at the hands; on six clips
+  every lineman's feet sat at 2.4 yd or less and every linebacker at 4.2 or more);
+  second level 2.5-7 yd; a drop = 3+ yd back by +1.5 s; rushers = the line minus drops plus
+  second-level players who reached the line. Named the football way ("4-2 front"), classed
+  standard rush / blitz (5+) / simulated pressure (5+ shown, 4 or fewer rushed). Film box
+  counts vs the 2023 `defenders_in_the_box`: 2 of 5 exact, 3 off by one; line counts look
+  low on dense lines (merged boxes) and high where sides blur at the line. So the disguise
+  card always marks it Unsure and takes a manual front + rushers (`/api/clips/{id}/pressure`,
+  logged as `phase: "pressure"` in the corrections log). Read from tracks with the linemen
+  kept; unreadable when the defense does not count 10-11 at the snap.
+- **Rotation tactics renamed**: Spin (two-high spun to single-high), Split (single-high
+  opened to split safeties; "invert" usually means safeties down, corners deep).
+
 ## Final film test, term-first cards, short track gaps bridged (2026-10-25)
 
 - **Final film test (holdout, scored once 2026-10-25; never re-score).** 2023 wk 17 GB @

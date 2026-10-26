@@ -463,3 +463,25 @@ def test_the_disguise_card_is_judged_on_its_own_call(client, tmp_path, monkeypat
     )
     assert client.get(f"/api/clips/{cid}").json()["corrections"]["disguise"]["correct"] is False
     assert "Tampa 2" in client.get("/api/calls").json()["disguises"]
+
+
+def test_a_person_can_say_what_the_front_and_rush_were(client, tmp_path, monkeypatch):
+    log = tmp_path / "c.jsonl"
+    monkeypatch.setattr("nfl_coverage.web.app.CORRECTIONS", log)
+    cid = _with_result(client, tmp_path)
+    bad = {"front": "four-three", "rushers": 4}
+    assert client.post(f"/api/clips/{cid}/pressure", json=bad).status_code == 422
+    res = tmp_path / "web" / cid / "result.json"
+    rep = json.loads(res.read_text())
+    rep["report"]["front"] = {"front": "6-1", "rushers": 4, "rush_class": "simulated pressure"}
+    res.write_text(json.dumps(rep))
+    r = client.post(f"/api/clips/{cid}/pressure", json={"front": "4-3", "rushers": 5})
+    assert r.status_code == 200, r.text
+    rec = json.loads(log.read_text().splitlines()[0])
+    assert (rec["phase"], rec["front"], rec["rushers"], rec["model_front"]) == (
+        "pressure",
+        "4-3",
+        5,
+        "6-1",
+    )
+    assert client.get(f"/api/clips/{cid}").json()["corrections"]["pressure"]["rushers"] == 5

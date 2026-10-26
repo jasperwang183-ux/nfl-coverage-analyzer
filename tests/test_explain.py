@@ -122,7 +122,7 @@ def test_no_rule_fired_names_the_rotation_tactic_as_a_best_guess():
     assert "Likeliest: Cover 2 zone" in d["also"] and "Can also be Cover 4 zone" in d["also"]
     rot = _report(label="rotate_to_mof_closed")
     call = cards(rot, {"max_move": 4.9, "rotator_dd": -4.9}, MIDDLE)["disguise"]["call"]
-    assert call == "Best guess: Safety rotation (Cover 2 shell rotated to single-high)."
+    assert call == "Best guess: Spin (Cover 2 shell spun to single-high)."
 
 
 def test_the_runner_up_needs_ten_percent():
@@ -146,3 +146,26 @@ def test_names_are_glossed_on_first_use_only():
     assert g.note("Cover 3 zone") == ""
     assert coverage_name("COVER_2_MAN") == "Cover 2 man"
     assert coverage_name("COVER_3_ZONE") == "Cover 3 zone"
+
+
+def test_the_disguise_card_carries_the_front_and_rush_marked_unsure():
+    rep = _report()
+    rep.front = {
+        "front": "6-1", "n_line": 6, "n_second": 1, "n_box": 7, "rushers": 4, "dropped": 2,
+        "rush_class": "simulated pressure", "unsure": "nothing on film checks who rushed",
+        "reasons": [],
+    }  # fmt: skip
+    d = cards(rep, {}, MIDDLE)["disguise"]
+    assert d["pressure"] == (
+        "Simulated pressure from a 6-1 front: 6 at the line, 2 dropped, 4 rushed; 7 in the box."
+    )
+    assert d["pressure_sure"].startswith("Unsure: nothing on film checks who rushed.")
+    rep.front = {"front": "", "unsure": "the defense counts 13 at the snap, so the sides are off"}
+    assert cards(rep, {}, MIDDLE)["disguise"]["pressure"] == "Front unreadable."
+
+
+def test_a_lowercase_shell_term_mid_sentence():
+    rep = _report(label="")
+    rep.shown.n_deep, rep.shown.mof_closed = 1, True
+    call = cards(rep, {"max_move": 0.5}, MIDDLE)["disguise"]["call"]
+    assert call == "Best guess: No disguise (the single-high shell held)."

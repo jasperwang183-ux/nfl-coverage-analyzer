@@ -370,6 +370,16 @@ class CorrectionRequest(BaseModel):
         return self
 
 
+class PressureRequest(BaseModel):
+    """What a person saw of the front and the rush, where nothing in the data checks it."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    front: str = Field(pattern=r"^\d{1,2}-\d{1,2}$")  # at the line - second level: "4-3"
+    rushers: int = Field(ge=0, le=11)
+    note: str | None = Field(None, max_length=2000)
+
+
 class AnalyzeRequest(BaseModel):
     start: float
     end: float
@@ -724,6 +734,31 @@ def create_app(
         if req.snap_t is not None:
             log_snap_label(store.meta(clip_id), read)
         return result
+
+    @app.post("/api/clips/{clip_id}/pressure")
+    def pressure(clip_id: str, req: PressureRequest):
+        d = store.dir(clip_id)
+        if not (d / "result.json").exists():
+            raise HTTPException(409, "there is no read to label yet")
+        meta = store.meta(clip_id)
+        res = json.loads((d / "result.json").read_text())
+        front = res["report"].get("front") or {}
+        rec = {
+            "logged": time.time(),
+            "clip": meta["name"],
+            "clip_id": clip_id,
+            "phase": "pressure",
+            "front": req.front,
+            "rushers": req.rushers,
+            "note": req.note,
+            "model_front": front.get("front"),
+            "model_rushers": front.get("rushers"),
+            "model_rush_class": front.get("rush_class"),
+            "snap_t": res["snap"]["t"],
+        }
+        log_correction(rec)
+        store.update(clip_id, corrections={**meta.get("corrections", {}), "pressure": rec})
+        return rec
 
     @app.post("/api/clips/{clip_id}/correction")
     def correction(clip_id: str, req: CorrectionRequest):

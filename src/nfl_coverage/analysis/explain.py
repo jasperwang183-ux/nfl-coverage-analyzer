@@ -56,8 +56,11 @@ TACTICS = {
 }
 # the shell rotation's tactic when no mechanism fired (`disguise.shell_rotation` labels)
 ROTATION_TACTICS = {
-    "rotate_to_mof_closed": ("Safety rotation", "{shown} rotated to single-high"),
-    "rotate_to_mof_open": ("Safety split", "{shown} split to two-high"),
+    # Spin: two-high spun to single-high; Split: single-high rotated to split safeties
+    # (the analyst asked for Spin / Invert; "invert" usually means safeties down and corners
+    # deep, so the single-high-to-two-high move is named Split)
+    "rotate_to_mof_closed": ("Spin", "{shown} spun to single-high"),
+    "rotate_to_mof_open": ("Split", "{shown} opened to split safeties"),
     "rotation_down": ("Rotation down", "a deep defender came down out of the {shown}"),
     "rotation_up": ("Bail", "more defenders deep than the {shown} showed"),
     "corner_bail": ("No disguise", "the {shown} held; the corners bailed as its technique"),
@@ -106,6 +109,8 @@ class Card:
     also: str = ""
     disagree: str = ""
     guess: bool = False
+    pressure: str = ""  # the disguise card's front and rush line (analysis.front)
+    pressure_sure: str = ""
 
 
 class _Glosser:
@@ -411,7 +416,8 @@ def _disguise_card(rep: CoverageReport, rotation: dict, gloss: _Glosser) -> Card
         )
 
     tactic, desc = ROTATION_TACTICS.get(rep.disguise_label, (rep.disguise_label, "{shown}"))
-    call = f"Best guess: {tactic} ({desc.format(shown=shell)})."
+    shown_term = shell if shell.startswith("Cover") else shell[0].lower() + shell[1:]
+    call = f"Best guess: {tactic} ({desc.format(shown=shown_term)})."
     moved = _rotation_words(rotation)
     why = (f"After the snap {moved}. " if moved else "Nobody moved 3 yd after the snap. ") + (
         "No disguise rule fired in the first second."
@@ -433,6 +439,21 @@ def _disguise_card(rep: CoverageReport, rotation: dict, gloss: _Glosser) -> Card
         also=also,
         guess=True,
     )
+
+
+def pressure_line(front: dict) -> tuple[str, str]:
+    """The front and the rush, term first: "Simulated pressure from a 6-2 front: ..."."""
+    if not front:
+        return "", ""
+    if not front.get("front"):
+        return "Front unreadable.", f"Unsure: {front['unsure']}."
+    cls = front["rush_class"]
+    line = (
+        f"{cls[0].upper()}{cls[1:]} from a {front['front']} front: {front['n_line']} at the "
+        f"line, {front['dropped']} dropped, {front['rushers']} rushed; {front['n_box']} in "
+        "the box."
+    )
+    return line, f"Unsure: {front['unsure']}. Enter what you saw below."
 
 
 def cards(
@@ -474,4 +495,5 @@ def cards(
             post = _read_card(*common, "the played shell", "post", extra=extra, middle=middle)
         out["post"] = post
     out["disguise"] = _disguise_card(rep, rotation, gloss)
+    out["disguise"].pressure, out["disguise"].pressure_sure = pressure_line(rep.front)
     return {k: asdict(v) for k, v in out.items()}
