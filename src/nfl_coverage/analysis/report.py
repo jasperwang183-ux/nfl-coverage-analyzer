@@ -374,6 +374,7 @@ class CoverageReport:
     mechanisms: list[dict] = field(default_factory=list)  # analysis.mechanisms hits
     cards: dict = field(default_factory=dict)  # analysis.explain: the cards' four lines
     front: dict = field(default_factory=dict)  # analysis.front: the front and the rush
+    diagram: dict = field(default_factory=dict)  # analysis.zones: the called coverage drawn
 
     def to_dict(self) -> dict:
         return asdict(self)

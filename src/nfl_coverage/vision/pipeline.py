@@ -45,6 +45,7 @@ from nfl_coverage.analysis.report import (
     structural_read,
     variant_confidence,
 )
+from nfl_coverage.analysis.zones import diagram
 from nfl_coverage.config import FIELD_LENGTH, FIELD_WIDTH
 from nfl_coverage.features.alignment import snapshot_features
 from nfl_coverage.features.movement import post_snap_features
@@ -615,6 +616,8 @@ def read_tracked(
         k: _jsonable(v) for k, v in rot.to_dict().items() if not isinstance(v, (list, dict))
     }
     report.cards = cards(report, rotation, MIDDLE_LATERAL, f"by +{played_rf * step:.1f} s")
+    post_call = report.cards.get("post", {}).get("call", "")
+    report.diagram = asdict(diagram(tracks, los_c, centers.mechanisms, post_call, step))
     return ClipRead(
         snap=det,
         snap_index=snap_i,
