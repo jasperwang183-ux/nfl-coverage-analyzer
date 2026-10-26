@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from itertools import pairwise
 from pathlib import Path
 
@@ -30,6 +30,7 @@ import pandas as pd
 
 from nfl_coverage.analysis.disguise import shell_rotation
 from nfl_coverage.analysis.explain import cards
+from nfl_coverage.analysis.front import front_read
 from nfl_coverage.analysis.mechanisms import HIT_COLUMNS, HIT_NUMBERS, mechanism_hits
 from nfl_coverage.analysis.report import (
     COUNT_READ,
@@ -605,6 +606,9 @@ def read_tracked(
         post_model=post_model,
         mechanisms=hits,
     )
+    # the front and the rush need the linemen the coverage tracks drop
+    full = canonical_tracks(frames, calibs, sides, snap_i, offense, step, drop_line=False, los=los)
+    report.front = asdict(front_read(full, los_c, centers.mechanisms, step))
     feats = post_snap_features(tracks, horizon=played_rf).iloc[0]
     features = {k: float(v) for k, v in feats.items() if k.startswith("post_")}
     rotation = {

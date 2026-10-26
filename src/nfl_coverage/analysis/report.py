@@ -373,6 +373,7 @@ class CoverageReport:
     post_model: ModelRead | None = None  # sequence model, the whole play
     mechanisms: list[dict] = field(default_factory=list)  # analysis.mechanisms hits
     cards: dict = field(default_factory=dict)  # analysis.explain: the cards' four lines
+    front: dict = field(default_factory=dict)  # analysis.front: the front and the rush
 
     def to_dict(self) -> dict:
         return asdict(self)
