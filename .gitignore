@@ -49,8 +49,8 @@ Thumbs.db
 .vscode/
 .idea/
 
-# sample clips are tracked test fixtures (see samples/README.md)
-!samples/**/*.mp4
+# sample clips stay local: screen captures of someone else's film (see samples/README.md)
+samples/**/*.mp4
 
 # agent worktrees
 .claude/worktrees/

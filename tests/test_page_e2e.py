@@ -1,7 +1,8 @@
 """The page end to end on real film: upload and nothing else, then correct a read.
 
-Runs YOLO on the committed sample clip (samples/sf-lar/clip1.mp4), so it takes
-tens of seconds on a GPU and minutes on a CPU; `pytest -m "not slow"` skips it.
+Runs YOLO on the local sample clip (samples/sf-lar/clip1.mp4, not in git; skipped
+without it), so it takes tens of seconds on a GPU and minutes on a CPU;
+`pytest -m "not slow"` skips it.
 The expected values are the facts recorded for this play in
 samples/verify/clips.json (the analyst's Cover 4 call), less the absolute LOS:
 the yard lines are named with no person, so field x is arbitrary along the field.

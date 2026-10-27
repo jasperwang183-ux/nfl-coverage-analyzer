@@ -15,8 +15,11 @@ painted 40 next to the ball, not the ball). The tracked clip 1 command infers
 the LOS, offense side and ball y from the snap frame instead
 (`vision/formation.py`).
 
-Both were captured from a YouTube film-study video; they are here as test fixtures
-for this project, not for redistribution.
+Both were captured from a YouTube film-study video, so the videos are not in the
+repository (`.gitignore` keeps `samples/**/*.mp4` out); only their calibrations and the
+analyst's facts are. To run the commands below or the slow tests, capture the two plays
+yourself and save them at `samples/sf-lar/clip1.mp4` and `clip2.mp4`. Without them,
+`tests/test_page_e2e.py` skips.
 
 ## Reproduce the reads
 
