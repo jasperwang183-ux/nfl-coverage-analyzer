@@ -38,7 +38,8 @@ CACHE = ROOT / "data" / "verify" / "cache"
 
 def default_tag() -> str:
     def git(*a: str) -> str:
-        return subprocess.run(["git", *a], cwd=ROOT, capture_output=True, text=True).stdout
+        run = subprocess.run(["git", *a], cwd=ROOT, capture_output=True, text=True, check=False)
+        return run.stdout
 
     sha = git("rev-parse", "--short", "HEAD").strip() or "nogit"
     dirty = "-dirty" if git("status", "--porcelain", "--", "src", "scripts").strip() else ""
@@ -180,9 +181,8 @@ def compare_film(a: dict, b: dict) -> None:
         om = {k: v for s in old["stages"] for k, v in s["metrics"].items()}
         nm = {k: v for s in r["stages"] for k, v in s["metrics"].items()}
         for k in keys:
-            if k in om or k in nm:
-                if om.get(k) != nm.get(k):
-                    print(f"      {k}: {om.get(k)} -> {nm.get(k)}")
+            if om.get(k) != nm.get(k):  # a key missing from both reads None on each side
+                print(f"      {k}: {om.get(k)} -> {nm.get(k)}")
         oe, ne = old.get("expect", {}), r.get("expect", {})
         for k in ne:
             if oe.get(k, {}).get("ok") != ne[k]["ok"]:

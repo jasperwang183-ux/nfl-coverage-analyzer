@@ -12,7 +12,6 @@ Usage: python scripts/train_baseline.py
 
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.metrics import accuracy_score, classification_report
@@ -53,7 +52,7 @@ def main() -> None:
     shown_cols = [c for c in feat_cols if not c.startswith("post_")]
     shared_cols = [c for c in feat_cols if not c.startswith("pre_")]  # exist in bdb2026
 
-    run_model = _fit_eval("RUN model (all features, 2018 holdout)", train, test, feat_cols)
+    _fit_eval("RUN model (all features, 2018 holdout)", train, test, feat_cols)
     shown_model = _fit_eval("SHOWN model (pre-snap only, 2018 holdout)", train, test, shown_cols)
 
     # cross-season transfer: retrain on shared features so 2026 can be scored
@@ -71,7 +70,7 @@ def main() -> None:
     conf = proba.max(axis=1)
     shown_pred = shown_model.classes_[proba.argmax(axis=1)]
     disguised = (conf >= 0.5) & (shown_pred != test.coverage_type)
-    print(f"\n=== disguise prototype (2018 holdout) ===")
+    print("\n=== disguise prototype (2018 holdout) ===")
     print(
         f"plays where defense showed one thing confidently but ran another: "
         f"{disguised.sum()} / {len(test)} ({disguised.mean():.1%})"

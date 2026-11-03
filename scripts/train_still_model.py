@@ -13,7 +13,7 @@ Usage: python scripts/train_still_model.py
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, datetime
 
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.metrics import accuracy_score, classification_report
@@ -55,7 +55,7 @@ def main() -> None:
         snap_cols,
         TARGET,
         meta={
-            "trained": str(date.today()),
+            "trained": str(datetime.now(UTC).date()),
             "n_train": len(labeled),
             "holdout_accuracy": round(acc, 4),
             "holdout": "bdb2021 weeks 14-17",

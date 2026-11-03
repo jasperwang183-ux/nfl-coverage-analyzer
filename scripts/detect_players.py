@@ -5,7 +5,7 @@ annotated copy. This validates detection quality on real footage before we build
 the homography (pixels -> field coordinates) and tracking stages.
 
 Usage:
-  python scripts/detect_players.py path\to\screenshot.png
+  python scripts/detect_players.py path/to/screenshot.png
   python scripts/detect_players.py clip.png --model yolo11m.pt --conf 0.25
 """
 

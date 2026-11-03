@@ -26,6 +26,7 @@ def download(competition: str, dest: Path) -> None:
     print(f"\n=== {competition} -> {dest} ===")
     result = subprocess.run(
         ["kaggle", "competitions", "download", "-c", competition, "-p", str(dest)],
+        check=False,
     )
     if result.returncode != 0:
         print(

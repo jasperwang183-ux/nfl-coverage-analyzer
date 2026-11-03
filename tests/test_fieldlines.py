@@ -211,7 +211,9 @@ def test_a_fit_on_the_hash_rows_alone_is_kept_with_a_depth_warning():
 
 def _slid(calib: FieldCalibration, dx: float) -> FieldCalibration:
     """The same camera with every field x off by `dx` yd: a drifted chain."""
-    return FieldCalibration.from_points(calib.pixel_points, calib.field_points + np.float32([dx, 0]))
+    return FieldCalibration.from_points(
+        calib.pixel_points, calib.field_points + np.float32([dx, 0])
+    )
 
 
 def test_grid_drift_measures_a_slide_off_the_painted_lines():
@@ -240,7 +242,7 @@ def test_refit_from_paint_needs_two_yard_lines():
 def test_a_partial_correction_moves_the_field_part_of_the_way():
     from nfl_coverage.vision.pipeline import corrected
 
-    frame, truth = _camera(_topdown())
+    _, truth = _camera(_topdown())
     shift = np.array([[1, 0, 2.0], [0, 1, 0], [0, 0, 1]])  # +2 yd along the field
     half = corrected(truth, 0.5 * np.eye(3) + 0.5 * shift)
     p = np.float32([[800, 450]])

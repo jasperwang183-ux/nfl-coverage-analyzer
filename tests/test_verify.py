@@ -122,7 +122,7 @@ def test_perturb_snap_drops_two_and_may_plant_an_official():
 def _late_deep_play() -> pd.DataFrame:
     """Two deep safeties until 2.8 s, then everyone runs past 12 yd (a play gone downfield)."""
     rows = []
-    for rf in range(0, 41):
+    for rf in range(41):
         for i in range(5):
             rows.append(("Offense", i, 48.0, 20.0 + 3 * i, rf))
         for i in range(7):

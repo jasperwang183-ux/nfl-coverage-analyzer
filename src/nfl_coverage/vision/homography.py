@@ -29,7 +29,7 @@ class FieldCalibration:
     matrix: np.ndarray  # (3, 3) homography
 
     @classmethod
-    def from_points(cls, pixel_points, field_points) -> "FieldCalibration":
+    def from_points(cls, pixel_points, field_points) -> FieldCalibration:
         px = np.asarray(pixel_points, dtype=np.float32)
         fp = np.asarray(field_points, dtype=np.float32)
         if px.shape != fp.shape or px.ndim != 2 or px.shape[1] != 2:
@@ -74,7 +74,7 @@ class FieldCalibration:
         )
 
     @classmethod
-    def load(cls, path: Path) -> "FieldCalibration":
+    def load(cls, path: Path) -> FieldCalibration:
         raw = json.loads(Path(path).read_text())
         if "matrix" in raw:
             return cls(
