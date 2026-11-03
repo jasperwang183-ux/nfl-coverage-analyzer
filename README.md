@@ -10,13 +10,15 @@ snap, what it actually ran after it, and the move that disguised one as the othe
 learns from NFL player-tracking data, then runs the same models on game film through a
 computer-vision pipeline.
 
-![Demo: a Cover 2 shell that turns into Tampa 2 when a linebacker runs the deep middle](docs/demo.gif)
+![Demo: a Cover 2 shell that turns into Tampa 2 when a linebacker runs the deep middle, with the Tampa 2 zones drawn](docs/demo.gif)
 
 *2023 Week 2, 49ers at Rams. Every dot is a player the vision pipeline found and tracked on
 all-22 film, mapped onto the field (offense moving right; no footage is shown). The defense
 shows two deep safeties; at the snap a linebacker (gold) sprints into the deep middle
-between them, the "pole run" that turns a Cover 2 look into Tampa 2. The three lines are
-the page's cards, word for word. Rendered with `scripts/render_demo.py`.*
+between them, the "pole run" that turns a Cover 2 look into Tampa 2. After the snap the
+called coverage's zones fade in (blue deep, yellow underneath) and each lights up when its
+defender gets there; the fit line counts how many did. The lines are the page's cards, word
+for word. Rendered with `scripts/render_demo.py`.*
 
 ## Results
 
