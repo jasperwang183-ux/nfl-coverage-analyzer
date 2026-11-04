@@ -285,8 +285,21 @@ def auto_calibrate(d: Path, meta: dict) -> tuple[dict | None, list[str]]:
 # ---------------------------------------------------------------- clip store
 
 
+def _swap(tmp: Path, dst: Path, tries: int = 10, wait: float = 0.05) -> None:
+    """Replace dst with tmp, retrying briefly: on Windows the rename is refused while another
+    process (a sync client, an indexer, antivirus) holds dst open for a moment."""
+    for i in range(tries):
+        try:
+            tmp.replace(dst)
+            return
+        except PermissionError:
+            if i == tries - 1:
+                raise
+            time.sleep(wait)
+
+
 class ClipStore:
-    """One folder per clip; meta.json is the durable state, a lock guards writes."""
+    """One folder per clip; meta.json is the durable state, a lock guards reads and writes."""
 
     def __init__(self, root: Path):
         self.root = Path(root)
@@ -302,7 +315,9 @@ class ClipStore:
         return d
 
     def meta(self, clip_id: str) -> dict:
-        return json.loads((self.dir(clip_id) / "meta.json").read_text())
+        # under the lock: on Windows the swap in _change fails while a reader has the file open
+        with self._lock:
+            return json.loads((self.dir(clip_id) / "meta.json").read_text())
 
     def advance(self, clip_id: str, stage: str, **fields) -> dict:
         """Move the job to `stage` if STAGES allows it from the current one. `needs` is
@@ -323,7 +338,7 @@ class ClipStore:
             meta.update(fields)
             tmp = d / "meta.json.tmp"
             tmp.write_text(json.dumps(meta, allow_nan=False))
-            tmp.replace(d / "meta.json")
+            _swap(tmp, d / "meta.json")
             return meta
 
     def create(self, name: str) -> tuple[str, Path]:
@@ -442,8 +457,8 @@ def create_app(
     def list_clips():
         out = []
         for d in sorted(store.root.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-            if (d / "meta.json").exists():
-                m = json.loads((d / "meta.json").read_text())
+            if d.name.isalnum() and (d / "meta.json").exists():
+                m = store.meta(d.name)
                 out.append({k: m.get(k) for k in ("id", "name", "created", "stage")})
         return out[:30]
 

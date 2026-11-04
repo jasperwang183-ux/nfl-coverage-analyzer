@@ -330,6 +330,30 @@ def test_a_stage_the_machine_does_not_allow_is_refused(client, tmp_path):
     assert meta["needs"] is None and meta["message"] == ""
 
 
+def test_a_briefly_locked_meta_file_is_retried_not_failed(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    from nfl_coverage.web.app import _swap
+
+    real, refusals = Path.replace, [PermissionError("held open"), PermissionError("held open")]
+
+    def flaky(self, target):  # Windows refuses the rename while another handle is open
+        if refusals:
+            raise refusals.pop()
+        return real(self, target)
+
+    monkeypatch.setattr(Path, "replace", flaky)
+    (tmp_path / "meta.json").write_text("old")
+    (tmp_path / "meta.json.tmp").write_text("new")
+    _swap(tmp_path / "meta.json.tmp", tmp_path / "meta.json", wait=0)
+    assert (tmp_path / "meta.json").read_text() == "new" and not refusals
+
+    refusals[:] = [PermissionError("held open")] * 3
+    (tmp_path / "meta.json.tmp").write_text("newer")
+    with pytest.raises(PermissionError):  # a file that stays locked still fails, loudly
+        _swap(tmp_path / "meta.json.tmp", tmp_path / "meta.json", tries=3, wait=0)
+
+
 # ------------------------------------------------------------- corrections
 
 
